@@ -10,6 +10,9 @@ import Activity from "../features/c1/activity.model.js";
 import FollowUp from "../features/c1/follow-up.model.js";
 
 import Document from "../features/documents/document.model.js";
+import DailyTarget from "../features/targets/daily-target.model.js";
+import BuildHandover from "../features/handover/build-handover.model.js";
+
 
 let initialized = false;
 
@@ -183,6 +186,27 @@ export const initializeAssociations =
           "leadId",
       }
     );
+
+
+    User.hasMany(DailyTarget, {
+      as: "dailyTargets",
+      foreignKey: "userId",
+    });
+
+    DailyTarget.belongsTo(User, {
+      as: "user",
+      foreignKey: "userId",
+    });
+
+    Lead.hasOne(BuildHandover, {
+      as: "buildHandover",
+      foreignKey: "leadId",
+    });
+
+    BuildHandover.belongsTo(Lead, {
+      as: "lead",
+      foreignKey: "leadId",
+    });
 
     initialized = true;
   };

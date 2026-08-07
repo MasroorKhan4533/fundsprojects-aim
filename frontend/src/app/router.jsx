@@ -23,6 +23,10 @@ import C3LeadPage from "../features/c3/pages/C3LeadPage";
 import C4Page from "../features/c4/pages/C4Page";
 import C4LeadPage from "../features/c4/pages/C4LeadPage";
 import WonDealsPage from "../features/c4/pages/WonDealsPage";
+import TargetsPage from "../features/targets/pages/TargetsPage";
+import PerformancePage from "../features/performance/pages/PerformancePage";
+import HandoverPage from "../features/handover/pages/HandoverPage";
+
 
 /*
   Central frontend router.
@@ -109,6 +113,22 @@ export const router = createBrowserRouter([
         path: "won",
         element: <WonDealsPage />,
       },
+
+      {
+        path: "targets",
+        element: <TargetsPage />,
+      },
+
+      {
+        path: "performance",
+        element: <PerformancePage />,
+      },
+
+      {
+        path: "handover",
+        element: <HandoverPage />,
+      },
+
     ],
   },
 ]);

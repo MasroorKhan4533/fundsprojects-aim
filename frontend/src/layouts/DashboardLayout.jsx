@@ -87,6 +87,27 @@ function DashboardLayout() {
             >
               Won Deals
             </NavLink>
+
+            <NavLink
+              to="/targets"
+              className={linkClass}
+            >
+              Daily Targets
+            </NavLink>
+
+            <NavLink
+              to="/performance"
+              className={linkClass}
+            >
+              Team Performance
+            </NavLink>
+
+            <NavLink
+              to="/handover"
+              className={linkClass}
+            >
+              BUILD Handover
+            </NavLink>
           </nav>
         </div>
 
