@@ -12,4 +12,10 @@ export const env = {
     user: process.env.DB_USER || "fundsroom",
     password: process.env.DB_PASSWORD || "",
   },
+
+  auth: {
+    jwtSecret: process.env.JWT_SECRET,
+    jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
+    cookieName: process.env.COOKIE_NAME || "aim_token",
+  },
 };
