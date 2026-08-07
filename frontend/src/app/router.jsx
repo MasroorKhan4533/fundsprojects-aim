@@ -14,9 +14,24 @@ import LeadDetailsPage from "../features/leads/pages/LeadDetailsPage";
 import C1Page from "../features/c1/pages/C1Page";
 import C1LeadPage from "../features/c1/pages/C1LeadPage";
 
+import C2Page from "../features/c2/pages/C2Page";
+import C2LeadPage from "../features/c2/pages/C2LeadPage";
+
+import C3Page from "../features/c3/pages/C3Page";
+import C3LeadPage from "../features/c3/pages/C3LeadPage";
+
+import C4Page from "../features/c4/pages/C4Page";
+import C4LeadPage from "../features/c4/pages/C4LeadPage";
+import WonDealsPage from "../features/c4/pages/WonDealsPage";
+
+/*
+  Central frontend router.
+*/
+
 export const router = createBrowserRouter([
   {
     element: <AuthLayout />,
+
     children: [
       {
         path: "/login",
@@ -27,6 +42,7 @@ export const router = createBrowserRouter([
 
   {
     path: "/",
+
     element: (
       <ProtectedRoute>
         <DashboardLayout />
@@ -57,6 +73,41 @@ export const router = createBrowserRouter([
       {
         path: "c1/:leadId",
         element: <C1LeadPage />,
+      },
+
+      {
+        path: "c2",
+        element: <C2Page />,
+      },
+
+      {
+        path: "c2/:leadId",
+        element: <C2LeadPage />,
+      },
+
+      {
+        path: "c3",
+        element: <C3Page />,
+      },
+
+      {
+        path: "c3/:leadId",
+        element: <C3LeadPage />,
+      },
+
+      {
+        path: "c4",
+        element: <C4Page />,
+      },
+
+      {
+        path: "c4/:leadId",
+        element: <C4LeadPage />,
+      },
+
+      {
+        path: "won",
+        element: <WonDealsPage />,
       },
     ],
   },
