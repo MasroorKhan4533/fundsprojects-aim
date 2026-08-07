@@ -45,6 +45,15 @@ function DashboardLayout() {
             >
               A — Master Leads
             </NavLink>
+
+            <NavLink
+              to="/c1"
+              className={({ isActive }) =>
+                isActive ? "active" : ""
+              }
+            >
+              I — C1 Connect
+            </NavLink>
           </nav>
         </div>
 

@@ -11,40 +11,53 @@ import DashboardPage from "../features/dashboard/pages/DashboardPage";
 import LeadsPage from "../features/leads/pages/LeadsPage";
 import LeadDetailsPage from "../features/leads/pages/LeadDetailsPage";
 
-export const router =
-  createBrowserRouter([
-    {
-      element: <AuthLayout />,
-      children: [
-        {
-          path: "/login",
-          element: <LoginPage />,
-        },
-      ],
-    },
+import C1Page from "../features/c1/pages/C1Page";
+import C1LeadPage from "../features/c1/pages/C1LeadPage";
 
-    {
-      path: "/",
+export const router = createBrowserRouter([
+  {
+    element: <AuthLayout />,
+    children: [
+      {
+        path: "/login",
+        element: <LoginPage />,
+      },
+    ],
+  },
 
-      element: (
-        <ProtectedRoute>
-          <DashboardLayout />
-        </ProtectedRoute>
-      ),
+  {
+    path: "/",
+    element: (
+      <ProtectedRoute>
+        <DashboardLayout />
+      </ProtectedRoute>
+    ),
 
-      children: [
-        {
-          index: true,
-          element: <DashboardPage />,
-        },
-        {
-          path: "leads",
-          element: <LeadsPage />,
-        },
-        {
-          path: "leads/:id",
-          element: <LeadDetailsPage />,
-        },
-      ],
-    },
-  ]);
+    children: [
+      {
+        index: true,
+        element: <DashboardPage />,
+      },
+
+      {
+        path: "leads",
+        element: <LeadsPage />,
+      },
+
+      {
+        path: "leads/:id",
+        element: <LeadDetailsPage />,
+      },
+
+      {
+        path: "c1",
+        element: <C1Page />,
+      },
+
+      {
+        path: "c1/:leadId",
+        element: <C1LeadPage />,
+      },
+    ],
+  },
+]);
