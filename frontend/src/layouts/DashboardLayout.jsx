@@ -1,4 +1,5 @@
-import { Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+
 import { useAuth } from "../features/auth/hooks/useAuth";
 import { useLogout } from "../features/auth/hooks/useLogout";
 
@@ -18,6 +19,7 @@ function DashboardLayout() {
         <div>
           <div className="sidebar-brand">
             <div className="brand-mark">AIM</div>
+
             <div>
               <strong>FundsProjects</strong>
               <small>Sales Operations</small>
@@ -25,7 +27,24 @@ function DashboardLayout() {
           </div>
 
           <nav className="sidebar-nav">
-            <a href="/">AIM Master Dashboard</a>
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                isActive ? "active" : ""
+              }
+            >
+              AIM Master Dashboard
+            </NavLink>
+
+            <NavLink
+              to="/leads"
+              className={({ isActive }) =>
+                isActive ? "active" : ""
+              }
+            >
+              A — Master Leads
+            </NavLink>
           </nav>
         </div>
 
@@ -33,7 +52,10 @@ function DashboardLayout() {
           <strong>{data?.user?.fullName}</strong>
           <span>{data?.user?.role}</span>
 
-          <button onClick={handleLogout} className="secondary-button">
+          <button
+            onClick={handleLogout}
+            className="secondary-button"
+          >
             Logout
           </button>
         </div>
