@@ -1,0 +1,27 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: #f7f9fb;
+  color: #1f2937;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 240px;
+  padding: 24px;
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+}
+
+.main-content {
+  flex: 1;
+  padding: 32px;
+}
