@@ -2,6 +2,10 @@ import "dotenv/config";
 import { z } from "zod";
 
 const optionalString = z.string().optional().transform((value) => value?.trim() || "");
+const optionalBoolean = z.enum(["true", "false"]).optional().transform((value) => {
+  if (value === undefined) return undefined;
+  return value === "true";
+});
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -17,6 +21,7 @@ const schema = z.object({
   REMEMBER_ME_REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(180).default(30),
   ACCESS_COOKIE_NAME: z.string().min(1).default("aim_access_token"),
   REFRESH_COOKIE_NAME: z.string().min(1).default("aim_refresh_token"),
+  COOKIE_SECURE: optionalBoolean,
   ACTIVATION_TOKEN_TTL_MINUTES: z.coerce.number().int().min(15).max(10080).default(1440),
   PASSWORD_RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(1440).default(30),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
@@ -39,9 +44,21 @@ const schema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(500),
   REQUEST_BODY_LIMIT: z.string().default("1mb"),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
-  STORAGE_PROVIDER: z.enum(["local"]).default("local"),
+  STORAGE_PROVIDER: z.enum(["local", "s3"]).default("local"),
   LOCAL_STORAGE_DIR: z.string().min(1).default("storage/private"),
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(50).default(10),
+  S3_BUCKET: optionalString,
+  S3_REGION: optionalString,
+  S3_PREFIX: z.string().default("private"),
+}).superRefine((data, ctx) => {
+  if (data.STORAGE_PROVIDER === "s3") {
+    if (!data.S3_BUCKET) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["S3_BUCKET"], message: "S3_BUCKET is required when STORAGE_PROVIDER=s3" });
+    }
+    if (!data.S3_REGION) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["S3_REGION"], message: "S3_REGION is required when STORAGE_PROVIDER=s3" });
+    }
+  }
 });
 
 const parsed = schema.safeParse(process.env);
@@ -72,6 +89,7 @@ export const env = Object.freeze({
     rememberMeRefreshTokenTtlDays: raw.REMEMBER_ME_REFRESH_TOKEN_TTL_DAYS,
     accessCookieName: raw.ACCESS_COOKIE_NAME,
     refreshCookieName: raw.REFRESH_COOKIE_NAME,
+    cookieSecure: raw.COOKIE_SECURE ?? raw.NODE_ENV === "production",
     activationTokenTtlMinutes: raw.ACTIVATION_TOKEN_TTL_MINUTES,
     passwordResetTokenTtlMinutes: raw.PASSWORD_RESET_TOKEN_TTL_MINUTES,
     bcryptRounds: raw.BCRYPT_ROUNDS,
@@ -101,7 +119,16 @@ export const env = Object.freeze({
   }),
   requestBodyLimit: raw.REQUEST_BODY_LIMIT,
   shutdownTimeoutMs: raw.SHUTDOWN_TIMEOUT_MS,
-  storage: Object.freeze({ provider: raw.STORAGE_PROVIDER, localDir: raw.LOCAL_STORAGE_DIR, maxUploadBytes: raw.MAX_UPLOAD_MB * 1024 * 1024 }),
+  storage: Object.freeze({
+    provider: raw.STORAGE_PROVIDER,
+    localDir: raw.LOCAL_STORAGE_DIR,
+    maxUploadBytes: raw.MAX_UPLOAD_MB * 1024 * 1024,
+    s3: Object.freeze({
+      bucket: raw.S3_BUCKET,
+      region: raw.S3_REGION,
+      prefix: raw.S3_PREFIX.replace(/^\/+|\/+$/g, "") || "private",
+    }),
+  }),
   isProduction: raw.NODE_ENV === "production",
   isTest: raw.NODE_ENV === "test",
 });

@@ -2,7 +2,7 @@ import { env } from "../../config/env.js";
 
 const baseCookie = () => ({
   httpOnly: true,
-  secure: env.isProduction,
+  secure: env.auth.cookieSecure,
   sameSite: "strict",
   path: "/",
 });

@@ -9,7 +9,7 @@ echo "== Secret / sensitive-file scan =="
 mapfile_compat() { while IFS= read -r line; do printf '%s\n' "$line"; done; }
 
 SENSITIVE_FILES=$(find backend frontend -maxdepth 2 -type f \( -name '.env.*' -o -name '*.pem' -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' \) \
-  ! -name '.env.example' ! -name '.env.docker.example' 2>/dev/null || true)
+  ! -name '.env.example' ! -name '.env.docker.example' ! -name '.env.staging.example' 2>/dev/null || true)
 if [ -n "$SENSITIVE_FILES" ]; then
   echo "❌ Sensitive backup/key files found:"
   echo "$SENSITIVE_FILES"

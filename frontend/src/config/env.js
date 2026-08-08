@@ -1,11 +1,19 @@
 import { z } from "zod";
 
-const schema = z.object({
-  VITE_API_URL: z.string().url(),
-});
+const apiUrl = z.string().min(1).refine((value) => {
+  if (value.startsWith("/")) return true;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}, "VITE_API_URL must be an absolute URL or a root-relative path");
+
+const schema = z.object({ VITE_API_URL: apiUrl });
 
 const parsed = schema.safeParse({
-  VITE_API_URL: import.meta.env.VITE_API_URL || "http://localhost:5001/api/v1",
+  VITE_API_URL: import.meta.env.VITE_API_URL || "/api/v1",
 });
 
 if (!parsed.success) {

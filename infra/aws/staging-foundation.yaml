@@ -1,0 +1,264 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: FundsProjects AIM staging infrastructure
+
+Parameters:
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+  InstanceType:
+    Type: String
+    Default: t3.small
+
+Resources:
+
+  StagingVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: fundsprojects-aim-staging-vpc
+        - Key: Project
+          Value: FundsProjects-AIM
+        - Key: Environment
+          Value: staging
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: fundsprojects-aim-staging-igw
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref StagingVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref StagingVpc
+      CidrBlock: 10.42.10.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: fundsprojects-aim-staging-public-1
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref StagingVpc
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: FundsProjects AIM staging web access
+      VpcId: !Ref StagingVpc
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: fundsprojects-aim-staging-sg
+
+  StagingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: fundsprojects-aim-staging-ec2-role
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+
+      Policies:
+        - PolicyName: FundsProjectsStagingApplicationAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::fundsprojects-aim-staging-documents-${AWS::AccountId}
+                  - !Sub arn:${AWS::Partition}:s3:::fundsprojects-aim-staging-backups-${AWS::AccountId}
+
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::fundsprojects-aim-staging-documents-${AWS::AccountId}/*
+                  - !Sub arn:${AWS::Partition}:s3:::fundsprojects-aim-staging-backups-${AWS::AccountId}/*
+
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/fundsprojects-aim/backend
+                  - !Sub arn:${AWS::Partition}:ecr:${AWS::Region}:${AWS::AccountId}:repository/fundsprojects-aim/frontend
+
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/fundsprojects-aim/staging/*
+
+  StagingInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: fundsprojects-aim-staging-ec2-profile
+      Roles:
+        - !Ref StagingRole
+
+  StagingInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref StagingInstanceProfile
+
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 2
+
+      NetworkInterfaces:
+        - DeviceIndex: "0"
+          AssociatePublicIpAddress: true
+          SubnetId: !Ref PublicSubnet
+          GroupSet:
+            - !Ref AppSecurityGroup
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 30
+            Encrypted: true
+            DeleteOnTermination: true
+
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -eux
+
+          dnf update -y
+          dnf install -y docker nginx git
+
+          systemctl enable docker
+          systemctl start docker
+
+          systemctl enable nginx
+          systemctl start nginx
+
+          systemctl enable amazon-ssm-agent || true
+          systemctl start amazon-ssm-agent || true
+
+          usermod -aG docker ec2-user
+
+          mkdir -p /opt/fundsprojects
+          chown ec2-user:ec2-user /opt/fundsprojects
+
+          echo "FundsProjects AIM Staging" > /usr/share/nginx/html/index.html
+
+      Tags:
+        - Key: Name
+          Value: fundsprojects-aim-staging
+        - Key: Project
+          Value: FundsProjects-AIM
+        - Key: Environment
+          Value: staging
+        - Key: ManagedBy
+          Value: CloudFormation
+
+  MongoDataVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Size: 20
+      VolumeType: gp3
+      Encrypted: true
+
+      Tags:
+        - Key: Name
+          Value: fundsprojects-aim-staging-mongodb
+        - Key: Project
+          Value: FundsProjects-AIM
+        - Key: Environment
+          Value: staging
+
+  MongoVolumeAttachment:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      Device: /dev/sdf
+      InstanceId: !Ref StagingInstance
+      VolumeId: !Ref MongoDataVolume
+
+Outputs:
+
+  InstanceId:
+    Value: !Ref StagingInstance
+
+  PublicIp:
+    Value: !GetAtt StagingInstance.PublicIp
+
+  PublicDns:
+    Value: !GetAtt StagingInstance.PublicDnsName
+
+  SecurityGroupId:
+    Value: !Ref AppSecurityGroup
+
+  MongoVolumeId:
+    Value: !Ref MongoDataVolume
