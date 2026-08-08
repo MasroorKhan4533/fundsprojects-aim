@@ -1,0 +1,10 @@
+import { sendSuccess } from "../../core/http/response.js";
+import { createBuildHandover, getBuildHandover, getDealForLead, getDealSummary, listCommercialWorkbench, saveC3, saveC4 } from "./deal.service.js";
+const contextFrom = (req) => ({ requestId: req.requestId, ip: req.ip, userAgent: req.get("user-agent") || "" });
+export const c3Controller = async (req, res) => sendSuccess(res, { message: "C3 collaboration saved", data: { deal: await saveC3(req.validated.params.leadId, req.validated.body, req.user, contextFrom(req)) } });
+export const c4Controller = async (req, res) => sendSuccess(res, { message: "C4 closure saved", data: { deal: await saveC4(req.validated.params.leadId, req.validated.body, req.user, contextFrom(req)) } });
+export const dealController = async (req, res) => sendSuccess(res, { data: await getDealForLead(req.validated.params.leadId, req.user) });
+export const workbenchController = async (req, res) => { const result = await listCommercialWorkbench(req.validated.query, req.user); return sendSuccess(res, { data: result.items, meta: result.meta }); };
+export const summaryController = async (req, res) => sendSuccess(res, { data: { summary: await getDealSummary(req.validated.query, req.user) } });
+export const handoverController = async (req, res) => sendSuccess(res, { statusCode: 201, message: "BUILD handover created", data: { handover: await createBuildHandover(req.validated.params.leadId, req.user, contextFrom(req)) } });
+export const getHandoverController = async (req, res) => sendSuccess(res, { data: { handover: await getBuildHandover(req.validated.params.leadId, req.user) } });

@@ -1,0 +1,16 @@
+import { Router } from "express";
+import { asyncHandler } from "../../core/http/async-handler.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { validate } from "../../middlewares/validate.js";
+import { c3Controller, c4Controller, dealController, getHandoverController, handoverController, summaryController, workbenchController } from "./deal.controller.js";
+import { c3Schema, c4Schema, handoverSchema, leadDealSchema, listDealsSchema, summarySchema } from "./deal.validation.js";
+const router = Router();
+router.use(authenticate);
+router.get("/summary", validate(summarySchema), asyncHandler(summaryController));
+router.get("/workbench", validate(listDealsSchema), asyncHandler(workbenchController));
+router.get("/:leadId/handover", validate(leadDealSchema), asyncHandler(getHandoverController));
+router.post("/:leadId/handover", validate(handoverSchema), asyncHandler(handoverController));
+router.get("/:leadId", validate(leadDealSchema), asyncHandler(dealController));
+router.put("/:leadId/c3", validate(c3Schema), asyncHandler(c3Controller));
+router.put("/:leadId/c4", validate(c4Schema), asyncHandler(c4Controller));
+export default router;

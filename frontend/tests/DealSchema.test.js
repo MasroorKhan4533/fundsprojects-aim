@@ -1,0 +1,6 @@
+import { describe, expect, it } from "vitest";
+import { c3FormSchema, c4FormSchema } from "../src/features/deals/schemas/deal.schemas";
+describe("M C3/C4 form schemas", () => {
+  it("accepts a valid C3 commercial proposal", () => { const result = c3FormSchema.safeParse({ budget: 1200000, probability: 70, expectedClose: "2026-09-01", v1Modules: "CRM", v1Timeline: "6 weeks", v1Cost: 900000, v2Modules: "ERP", v2Timeline: "10 weeks", v2Cost: 1200000, v3Modules: "ERP + AI", v3Timeline: "14 weeks", v3Cost: 1600000, preferredVersion: "V2", proposalVersion: "V2", proposalStatus: "SHARED", proposalUrl: "https://example.com/p", quotationUrl: "", negotiationNotes: "Negotiation" }); expect(result.success).toBe(true); });
+  it("accepts a Won C4 closure", () => { const result = c4FormSchema.safeParse({ finalVersion: "V2", finalValue: 1100000, discountPercent: 8, advanceAmount: 300000, paymentStatus: "PARTIAL", dealStatus: "WON", finalScope: "ERP", paymentTerms: "Milestones", agreementUrl: "https://example.com/a", ndaUrl: "", poUrl: "", agreementFileName: "", customCommissionPercent: 0, payoutStart: "2026-09-01", payoutMonths: 3, approvedTimeline: "12 weeks", closureNotes: "Won" }); expect(result.success).toBe(true); });
+});
