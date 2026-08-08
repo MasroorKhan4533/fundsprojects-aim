@@ -31,3 +31,7 @@ coverage/
 storage/
 backups/
 *.archive.gz
+# Source-code storage providers must be committed.
+# Runtime/private uploaded files remain ignored by the existing storage rules.
+!backend/src/features/documents/storage/
+!backend/src/features/documents/storage/**

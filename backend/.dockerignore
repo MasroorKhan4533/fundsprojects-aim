@@ -6,3 +6,7 @@ coverage
 storage/private
 .git
 npm-debug.log*
+
+# Include source-code storage providers in the backend image build context.
+!src/features/documents/storage/
+!src/features/documents/storage/**
