@@ -27,3 +27,7 @@ coverage/
 
 # Bundle backups
 .bundle-backups/
+
+storage/
+backups/
+*.archive.gz

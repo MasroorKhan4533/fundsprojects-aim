@@ -10,6 +10,8 @@ import Modal from "../../../components/ui/Modal";
 import PageHeader from "../../../components/ui/PageHeader";
 import Select from "../../../components/ui/Select";
 import StatCard from "../../../components/ui/StatCard";
+import LeadDocumentsPanel from "../../documents/components/LeadDocumentsPanel";
+import LeadImportPanel from "../../imports/components/LeadImportPanel";
 import LeadForm from "../../leads/components/LeadForm";
 import { useCreateLead, useDeleteLead, useLeadHistory, useLeadSummary, useLeads, useUpdateLead } from "../../leads/hooks/useLeads";
 import { useCurrentUser } from "../../auth/hooks/useAuth";
@@ -24,12 +26,13 @@ function AMasterLeadsPage() {
   const navigate = useNavigate();
   const { data: currentUser } = useCurrentUser();
   const isAdmin = currentUser?.role === "ADMIN";
-  const { data: usersResponse } = useUsers({ page: 1, limit: 100, status: "ACTIVE" });
+  const { data: usersResponse } = useUsers({ page: 1, limit: 100, status: "ACTIVE" }, { enabled: isAdmin });
   const users = usersResponse?.data || [];
   const [filters, setFilters] = useState({ page: 1, limit: 25, search: "", salesStage: "", assignedTo: "", leadPriority: "", sortBy: "updatedAt", sortOrder: "desc" });
   const [editingLead, setEditingLead] = useState(null);
   const [deleteLead, setDeleteLead] = useState(null);
   const [historyLead, setHistoryLead] = useState(null);
+  const [documentsLead, setDocumentsLead] = useState(null);
   const list = useLeads(filters);
   const summary = useLeadSummary(isAdmin && filters.assignedTo ? { assignedTo: filters.assignedTo } : {});
   const history = useLeadHistory(historyLead?.id, { enabled: Boolean(historyLead) });
@@ -52,7 +55,7 @@ function AMasterLeadsPage() {
     { key: "priority", header: "Priority", render: (lead) => <div><Badge tone={toneForPriority(lead.leadPriority)}>{lead.leadPriority}</Badge><span className="table-subtext">Intent {lead.buyingIntentScore}/100</span></div> },
     { key: "budget", header: "Budget", render: (lead) => money(lead.estimatedBudget) },
     { key: "followup", header: "Next Follow-up", render: (lead) => <div>{dateTime(lead.nextFollowUpDate)}<span className="table-subtext">{lead.nextAction || "No next action"}</span></div> },
-    { key: "actions", header: "Actions", render: (lead) => <div className="row-actions"><Button size="sm" variant="secondary" onClick={() => { setEditingLead(lead); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Edit</Button><Button size="sm" variant="ghost" onClick={() => setHistoryLead(lead)}>History</Button><Button size="sm" variant="secondary" onClick={() => navigate(`/app/i-c1-c2?leadId=${lead.id}`)}>Open I</Button><Button size="sm" variant="ghost" onClick={() => navigate(`/app/m-c3-c4?leadId=${lead.id}`)}>Open M</Button><Button size="sm" variant="danger" onClick={() => setDeleteLead(lead)}>Archive</Button></div> },
+    { key: "actions", header: "Actions", render: (lead) => <div className="row-actions"><Button size="sm" variant="secondary" onClick={() => { setEditingLead(lead); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Edit</Button><Button size="sm" variant="ghost" onClick={() => setHistoryLead(lead)}>History</Button><Button size="sm" variant="ghost" onClick={() => setDocumentsLead(lead)}>Docs</Button><Button size="sm" variant="secondary" onClick={() => navigate(`/app/i-c1-c2?leadId=${lead.id}`)}>Open I</Button><Button size="sm" variant="ghost" onClick={() => navigate(`/app/m-c3-c4?leadId=${lead.id}`)}>Open M</Button><Button size="sm" variant="danger" onClick={() => setDeleteLead(lead)}>Archive</Button></div> },
   ], [navigate]);
 
   const saveLead = async (payload) => {
@@ -71,6 +74,8 @@ function AMasterLeadsPage() {
         <StatCard label="High Priority" value={stats.highPriority ?? 0} helper={`${stats.hot ?? 0} hot leads`} />
         <StatCard label="Average Buying Intent" value={`${stats.averageIntentScore ?? 0}/100`} helper={`${stats.dueFollowUps ?? 0} follow-ups due`} />
       </div>
+
+      <LeadImportPanel users={users} currentUser={currentUser} />
 
       <Card className="lead-editor-card">
         <div className="section-card-head"><h2>{editingLead ? `Edit ${editingLead.permanentLeadId}` : "Add Master Lead"}</h2><p>Production data is stored in MongoDB. Saving here creates or updates one permanent lead record, not a stage-specific duplicate.</p></div>
@@ -93,6 +98,10 @@ function AMasterLeadsPage() {
       </Card>
 
       <ConfirmationDialog open={Boolean(deleteLead)} title="Archive this master lead?" description={deleteLead ? `${deleteLead.permanentLeadId} · ${deleteLead.companyName} will be soft-deleted. Its permanent identity and audit history are retained.` : ""} confirmLabel="Archive Lead" busy={removeLead.isPending} onCancel={() => setDeleteLead(null)} onConfirm={async () => { await removeLead.mutateAsync(deleteLead.id); setDeleteLead(null); if (editingLead?.id === deleteLead.id) setEditingLead(null); }} />
+
+      <Modal open={Boolean(documentsLead)} title={documentsLead ? `${documentsLead.permanentLeadId} Documents` : "Lead Documents"} description="Private authenticated storage for lead requirements, proposals, agreements, PO/NDA and related files." onClose={() => setDocumentsLead(null)} size="lg">
+        {documentsLead ? <LeadDocumentsPanel lead={documentsLead} /> : null}
+      </Modal>
 
       <Modal open={Boolean(historyLead)} title={historyLead ? `${historyLead.permanentLeadId} History` : "Lead History"} description="Immutable create/update/archive/restore history for this permanent lead." onClose={() => setHistoryLead(null)} size="lg">
         {history.isLoading ? <p>Loading history…</p> : history.error ? <p className="inline-error">{history.error.message}</p> : <div className="lead-history-list">{(history.data?.data?.history || []).map((item) => <div key={item.id} className="lead-history-item"><div><Badge tone={item.action === "SOFT_DELETED" ? "danger" : item.action === "CREATED" || item.action === "RESTORED" ? "success" : "info"}>{item.action}</Badge><strong>{item.actor?.fullName || "System user"}</strong></div><span>{dateTime(item.createdAt)}</span></div>)}</div>}

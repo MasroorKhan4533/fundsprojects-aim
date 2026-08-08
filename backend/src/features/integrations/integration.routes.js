@@ -1,0 +1,11 @@
+import { Router } from "express";
+import { asyncHandler } from "../../core/http/async-handler.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { validate } from "../../middlewares/validate.js";
+import { capabilitiesController, launchController } from "./integration.controller.js";
+import { launchSchema } from "./integration.validation.js";
+const router = Router();
+router.use(authenticate);
+router.get("/capabilities", asyncHandler(capabilitiesController));
+router.post("/leads/:leadId/launch", validate(launchSchema), asyncHandler(launchController));
+export default router;

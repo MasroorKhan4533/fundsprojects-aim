@@ -19,7 +19,7 @@ const requireAccess = (lead, actor) => { if (!canMutate(lead, actor)) throw new 
 
 const commissionRate = (value, custom = 0) => custom > 0 ? custom : value <= 500000 ? 3 : value <= 1000000 ? 7 : value <= 2000000 ? 10 : 15;
 const payoutMonths = (value, custom = 0) => custom > 0 ? custom : value <= 500000 ? 2 : value <= 1000000 ? 3 : value <= 2000000 ? 4 : 5;
-const commercial = (deal) => {
+export const calculateCommercial = (deal) => {
   const value = deal?.finalValue || 0; const rate = commissionRate(value, deal?.customCommissionPercent || 0); const months = payoutMonths(value, deal?.payoutMonths || 0); const total = value * rate / 100;
   return { commissionRate: rate, commissionTotal: total, payoutMonths: months, monthlyPayout: months ? total / months : 0 };
 };
@@ -28,7 +28,7 @@ const presentDeal = (deal) => deal ? ({
   id: String(deal._id), leadId: String(deal.leadId?._id || deal.leadId), permanentLeadId: deal.permanentLeadId, assignedTo: safeUser(deal.assignedTo),
   stage: deal.stage, budget: deal.budget || 0, probability: deal.probability || 0, expectedClose: deal.expectedClose, versions: deal.versions || [], preferredVersion: deal.preferredVersion || "", proposalVersion: deal.proposalVersion || "", proposalStatus: deal.proposalStatus, proposalUrl: deal.proposalUrl || "", quotationUrl: deal.quotationUrl || "", negotiationNotes: deal.negotiationNotes || "", c3At: deal.c3At,
   finalVersion: deal.finalVersion || "", finalValue: deal.finalValue || 0, discountPercent: deal.discountPercent || 0, advanceAmount: deal.advanceAmount || 0, paymentStatus: deal.paymentStatus, dealStatus: deal.dealStatus, finalScope: deal.finalScope || "", paymentTerms: deal.paymentTerms || "", agreementUrl: deal.agreementUrl || "", ndaUrl: deal.ndaUrl || "", poUrl: deal.poUrl || "", agreementFileName: deal.agreementFileName || "", customCommissionPercent: deal.customCommissionPercent || 0, payoutStart: deal.payoutStart, payoutMonths: deal.payoutMonths || 0, approvedTimeline: deal.approvedTimeline || "", closureNotes: deal.closureNotes || "", c4At: deal.c4At,
-  commercial: commercial(deal), createdAt: deal.createdAt, updatedAt: deal.updatedAt,
+  commercial: calculateCommercial(deal), createdAt: deal.createdAt, updatedAt: deal.updatedAt,
 }) : null;
 
 const presentLead = (lead, deal = null, handover = null) => ({

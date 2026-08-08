@@ -1,0 +1,53 @@
+name: FundsProjects AIM Quality Gate
+
+on:
+  push:
+    branches: [production-v1]
+  pull_request:
+    branches: [production-v1]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        env:
+          MONGO_INITDB_ROOT_USERNAME: aim_admin
+          MONGO_INITDB_ROOT_PASSWORD: aim_local_dev_change_me
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --username aim_admin --password aim_local_dev_change_me --authenticationDatabase admin --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Backend dependencies
+        working-directory: backend
+        run: npm ci
+      - name: Backend lint + tests
+        working-directory: backend
+        run: npm run check
+      - name: Backend production audit
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Frontend lint + tests + build
+        working-directory: frontend
+        run: npm run check
+      - name: Frontend production audit
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Secret scan
+        run: ./scripts/secret-scan.sh

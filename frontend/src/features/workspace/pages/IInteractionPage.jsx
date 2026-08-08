@@ -12,6 +12,7 @@ import StatCard from "../../../components/ui/StatCard";
 import { useCurrentUser } from "../../auth/hooks/useAuth";
 import InteractionForm from "../../interactions/components/InteractionForm";
 import { useCreateInteraction, useInteractionSummary, useInteractions, useJourney } from "../../interactions/hooks/useInteractions";
+import { useLaunchIntegration } from "../../integrations/hooks/useIntegrations";
 import { useLeads } from "../../leads/hooks/useLeads";
 import { useUsers } from "../../users/hooks/useUsers";
 
@@ -25,7 +26,7 @@ function IInteractionPage() {
   const requestedLeadId = searchParams.get("leadId") || "";
   const { data: currentUser } = useCurrentUser();
   const isAdmin = currentUser?.role === "ADMIN";
-  const { data: usersResponse } = useUsers({ page: 1, limit: 100, status: "ACTIVE" });
+  const { data: usersResponse } = useUsers({ page: 1, limit: 100, status: "ACTIVE" }, { enabled: isAdmin });
   const users = usersResponse?.data || [];
   const [filters, setFilters] = useState({ page: 1, limit: 25, search: "", salesStage: "", assignedTo: "", sortBy: "updatedAt", sortOrder: "desc" });
   const [activity, setActivity] = useState(null);
@@ -35,6 +36,7 @@ function IInteractionPage() {
   const timeline = useInteractions({ leadId: timelineLead?.id || "", page: 1, limit: 50 });
   const journey = useJourney(timelineLead?.id, { enabled: Boolean(timelineLead) });
   const createInteraction = useCreateInteraction();
+  const launchIntegration = useLaunchIntegration();
   const rows = leads.data?.data || [];
   const meta = leads.data?.meta || { page: 1, total: 0, totalPages: 1 };
   const stats = summary.data?.data?.summary || {};
@@ -47,8 +49,8 @@ function IInteractionPage() {
     { key: "owner", header: "Owner", render: (lead) => lead.assignedTo?.fullName || "—" },
     { key: "stage", header: "Stage", render: (lead) => <Badge tone={tone(lead.salesStage)}>{lead.salesStage}</Badge> },
     { key: "followup", header: "Next Follow-up", render: (lead) => <div>{when(lead.nextFollowUpDate)}<span className="table-subtext">{lead.nextAction || "No next action"}</span></div> },
-    { key: "actions", header: "Row Actions", render: (lead) => <div className="row-actions interaction-row-actions"><Button size="sm" variant="secondary" onClick={() => openActivity(lead, "C1", "EMAIL")}>Email</Button><Button size="sm" variant="ghost" onClick={() => { openWhatsApp(lead); openActivity(lead, "C1", "WHATSAPP"); }}>WhatsApp</Button><Button size="sm" variant="secondary" onClick={() => { startCall(lead); openActivity(lead, "C1", "CALL"); }}>Call</Button><Button size="sm" variant="secondary" onClick={() => openActivity(lead, "C1", "ONLINE_MEETING")}>C1</Button><Button size="sm" onClick={() => openActivity(lead, "C2", "ONLINE_MEETING")}>C2</Button><Button size="sm" variant="ghost" onClick={() => setTimelineLead(lead)}>Timeline</Button></div> },
-  ], []);
+    { key: "actions", header: "Row Actions", render: (lead) => <div className="row-actions interaction-row-actions"><Button size="sm" variant="secondary" onClick={() => { launchIntegration.mutate({ leadId: lead.id, channel: "EMAIL" }); openActivity(lead, "C1", "EMAIL"); }}>Email</Button><Button size="sm" variant="ghost" onClick={() => { launchIntegration.mutate({ leadId: lead.id, channel: "WHATSAPP" }); openWhatsApp(lead); openActivity(lead, "C1", "WHATSAPP"); }}>WhatsApp</Button><Button size="sm" variant="secondary" onClick={() => { launchIntegration.mutate({ leadId: lead.id, channel: "CALL" }); startCall(lead); openActivity(lead, "C1", "CALL"); }}>Call</Button><Button size="sm" variant="secondary" onClick={() => openActivity(lead, "C1", "ONLINE_MEETING")}>C1</Button><Button size="sm" onClick={() => openActivity(lead, "C2", "ONLINE_MEETING")}>C2</Button><Button size="sm" variant="ghost" onClick={() => setTimelineLead(lead)}>Timeline</Button></div> },
+  ], [launchIntegration]);
 
   const saveActivity = async (payload) => { await createInteraction.mutateAsync(payload); setActivity(null); };
   const focusLead = requestedLeadId && rows.find((item) => item.id === requestedLeadId);

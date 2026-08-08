@@ -13,6 +13,14 @@ const normalizeError = (error) => {
       cause: error,
     });
   }
+  if (error?.name === "MulterError") {
+    return new AppError(error.code === "LIMIT_FILE_SIZE" ? "Uploaded file is too large" : "File upload rejected", {
+      statusCode: error.code === "LIMIT_FILE_SIZE" ? 413 : 400,
+      code: error.code === "LIMIT_FILE_SIZE" ? "UPLOAD_TOO_LARGE" : "UPLOAD_REJECTED",
+      details: { uploadCode: error.code },
+      cause: error,
+    });
+  }
   if (error?.code === 11000) {
     return new AppError("A record with the same unique value already exists", {
       statusCode: 409,

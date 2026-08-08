@@ -49,3 +49,21 @@ In a second terminal, verify the full Bundle 0 stack:
 ## Security
 
 Never commit `.env`, credentials, tokens, production MongoDB URLs, AWS keys or provider secrets.
+
+## Localhost Production V1
+
+Phases 0–7 now cover the complete localhost product workflow: authentication, AIM Master/Targets, A Master Leads, I C1/C2, M C3/C4, My Profile, bulk lead import, private documents, integration boundaries and final engineering hardening.
+
+Final verification:
+
+```bash
+./scripts/final-localhost-check.sh
+```
+
+Local MongoDB backup:
+
+```bash
+./scripts/backup-local.sh
+```
+
+Cloud staging, AWS deployment, domain/HTTPS and production operations continue in Phases 8–10.

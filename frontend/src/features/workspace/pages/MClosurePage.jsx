@@ -18,7 +18,7 @@ const when = (value) => value ? new Date(value).toLocaleDateString("en-IN", { da
 const tone = (status) => status === "WON" || status === "Won" ? "success" : status === "LOST" || status === "Lost" ? "danger" : status === "C4" ? "warning" : "info";
 
 function MClosurePage() {
-  const { data: currentUser } = useCurrentUser(); const isAdmin = currentUser?.role === "ADMIN"; const { data: usersResponse } = useUsers({ page: 1, limit: 100, status: "ACTIVE" }); const users = usersResponse?.data || [];
+  const { data: currentUser } = useCurrentUser(); const isAdmin = currentUser?.role === "ADMIN"; const { data: usersResponse } = useUsers({ page: 1, limit: 100, status: "ACTIVE" }, { enabled: isAdmin }); const users = usersResponse?.data || [];
   const [filters, setFilters] = useState({ page: 1, limit: 25, search: "", assignedTo: "", dealStatus: "" }); const [modal, setModal] = useState(null); const [notice, setNotice] = useState("");
   const workbench = useDealWorkbench(filters); const summary = useDealSummary(isAdmin && filters.assignedTo ? { assignedTo: filters.assignedTo } : {}); const saveC3 = useSaveC3(); const saveC4 = useSaveC4(); const handover = useCreateHandover();
   const rows = workbench.data?.data || []; const meta = workbench.data?.meta || { page: 1, totalPages: 1 }; const stats = summary.data?.data?.summary || {};

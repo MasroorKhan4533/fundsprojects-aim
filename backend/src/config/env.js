@@ -39,6 +39,9 @@ const schema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(500),
   REQUEST_BODY_LIMIT: z.string().default("1mb"),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
+  STORAGE_PROVIDER: z.enum(["local"]).default("local"),
+  LOCAL_STORAGE_DIR: z.string().min(1).default("storage/private"),
+  MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(50).default(10),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -98,6 +101,7 @@ export const env = Object.freeze({
   }),
   requestBodyLimit: raw.REQUEST_BODY_LIMIT,
   shutdownTimeoutMs: raw.SHUTDOWN_TIMEOUT_MS,
+  storage: Object.freeze({ provider: raw.STORAGE_PROVIDER, localDir: raw.LOCAL_STORAGE_DIR, maxUploadBytes: raw.MAX_UPLOAD_MB * 1024 * 1024 }),
   isProduction: raw.NODE_ENV === "production",
   isTest: raw.NODE_ENV === "test",
 });
