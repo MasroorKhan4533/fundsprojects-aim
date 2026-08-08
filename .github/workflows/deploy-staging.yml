@@ -57,12 +57,19 @@ jobs:
         working-directory: backend
         env:
           NODE_ENV: test
-          MONGODB_URI: mongodb://127.0.0.1:27017/fundsprojects_aim_test
-          MONGO_URI: mongodb://127.0.0.1:27017/fundsprojects_aim_test
-          DATABASE_URL: mongodb://127.0.0.1:27017/fundsprojects_aim_test
+          # IMPORTANT: backend/tests/setup.js consumes MONGODB_TEST_URI and
+          # intentionally assigns it to MONGODB_URI for the test process.
+          MONGODB_TEST_URI: mongodb://127.0.0.1:27017/fundsprojects_aim_test
         run: |
           set -euo pipefail
-          echo "CI_MONGODB_URI_GREEN"
+          case "$MONGODB_TEST_URI" in
+            mongodb://127.0.0.1:27017/fundsprojects_aim_test) ;;
+            *)
+              echo "❌ Refusing to run CI tests against a non-local/non-test database."
+              exit 1
+              ;;
+          esac
+          echo "CI_MONGODB_TEST_URI_GREEN"
           npm ci
           npm run check
 
