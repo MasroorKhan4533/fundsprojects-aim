@@ -18,25 +18,43 @@ const parseResponse = async (response) => {
   return response.text();
 };
 
-export const apiClient = async (endpoint, options = {}) => {
+const rawRequest = async (endpoint, options = {}) => {
   const controller = new AbortController();
-  const timeoutMs = options.timeoutMs ?? 15000;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15000);
   try {
     const headers = new Headers(options.headers || {});
-    if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
-      headers.set("Content-Type", "application/json");
-    }
-
+    if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
     const response = await fetch(`${env.apiUrl}${endpoint}`, {
       ...options,
       credentials: "include",
       headers,
       signal: options.signal ?? controller.signal,
     });
-
     const payload = await parseResponse(response);
+    return { response, payload };
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+let refreshPromise = null;
+const attemptRefresh = () => {
+  if (!refreshPromise) {
+    refreshPromise = rawRequest("/auth/refresh", { method: "POST", body: JSON.stringify({}) })
+      .then(({ response }) => response.ok)
+      .catch(() => false)
+      .finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+};
+
+export const apiClient = async (endpoint, options = {}) => {
+  try {
+    let { response, payload } = await rawRequest(endpoint, options);
+    if (response.status === 401 && !options.skipAuthRefresh && endpoint !== "/auth/refresh") {
+      const refreshed = await attemptRefresh();
+      if (refreshed) ({ response, payload } = await rawRequest(endpoint, { ...options, skipAuthRefresh: true }));
+    }
 
     if (!response.ok) {
       throw new ApiError(payload?.message || `Request failed with status ${response.status}`, {
@@ -46,15 +64,10 @@ export const apiClient = async (endpoint, options = {}) => {
         requestId: payload?.requestId || response.headers.get("x-request-id"),
       });
     }
-
     return payload;
   } catch (error) {
-    if (error?.name === "AbortError") {
-      throw new ApiError("Request timed out", { code: "REQUEST_TIMEOUT" });
-    }
+    if (error?.name === "AbortError") throw new ApiError("Request timed out", { code: "REQUEST_TIMEOUT" });
     if (error instanceof ApiError) throw error;
     throw new ApiError("Unable to reach the API", { code: "NETWORK_ERROR" });
-  } finally {
-    clearTimeout(timeout);
   }
 };

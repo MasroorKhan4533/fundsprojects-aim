@@ -1,6 +1,6 @@
+import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
 import Button from "../src/components/ui/Button";
 
 describe("Button", () => {
