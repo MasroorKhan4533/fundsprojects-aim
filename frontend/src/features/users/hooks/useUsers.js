@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usersApi } from "../api/users.api";
 
 const usersKey = ["users"];
-export const useUsers = (params) => useQuery({ queryKey: [...usersKey, params], queryFn: () => usersApi.list(params) });
+export const useUsers = (params, options = {}) => useQuery({ queryKey: [...usersKey, params], queryFn: () => usersApi.list(params), ...options });
 
 const useInvalidatingMutation = (mutationFn) => {
   const queryClient = useQueryClient();

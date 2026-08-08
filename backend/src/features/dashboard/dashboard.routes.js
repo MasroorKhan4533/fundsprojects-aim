@@ -1,0 +1,10 @@
+import { Router } from "express";
+import { asyncHandler } from "../../core/http/async-handler.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { validate } from "../../middlewares/validate.js";
+import { getAimDashboardController } from "./dashboard.controller.js";
+import { dashboardSchema } from "./dashboard.validation.js";
+const router = Router();
+router.use(authenticate);
+router.get("/aim", validate(dashboardSchema), asyncHandler(getAimDashboardController));
+export default router;

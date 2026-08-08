@@ -1,2 +1,2 @@
 import { defineConfig } from "vitest/config";
-export default defineConfig({ test: { setupFiles: ["./tests/setup.js"], sequence: { concurrent: false } } });
+export default defineConfig({ test: { setupFiles: ["./tests/setup.js"], fileParallelism: false, sequence: { concurrent: false } } });
