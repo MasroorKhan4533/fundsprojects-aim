@@ -1,0 +1,11 @@
+import { sendSuccess } from "../../core/http/response.js";
+import { createLead, getLead, getLeadHistory, getLeadSummary, listLeads, restoreLead, softDeleteLead, updateLead } from "./lead.service.js";
+const contextFrom = (req) => ({ requestId: req.requestId, ip: req.ip, userAgent: req.get("user-agent") || "" });
+export const listLeadsController = async (req, res) => { const result = await listLeads(req.validated.query, req.user); return sendSuccess(res, { data: result.items, meta: result.meta }); };
+export const getLeadController = async (req, res) => sendSuccess(res, { data: { lead: await getLead(req.validated.params.id) } });
+export const createLeadController = async (req, res) => sendSuccess(res, { statusCode: 201, message: "Master lead created", data: { lead: await createLead(req.validated.body, req.user, contextFrom(req)) } });
+export const updateLeadController = async (req, res) => sendSuccess(res, { message: "Master lead updated", data: { lead: await updateLead(req.validated.params.id, req.validated.body, req.user, contextFrom(req)) } });
+export const deleteLeadController = async (req, res) => { await softDeleteLead(req.validated.params.id, req.user, contextFrom(req)); return sendSuccess(res, { message: "Master lead archived" }); };
+export const restoreLeadController = async (req, res) => sendSuccess(res, { message: "Master lead restored", data: { lead: await restoreLead(req.validated.params.id, req.user, contextFrom(req)) } });
+export const leadHistoryController = async (req, res) => sendSuccess(res, { data: { history: await getLeadHistory(req.validated.params.id) } });
+export const leadSummaryController = async (req, res) => sendSuccess(res, { data: { summary: await getLeadSummary(req.validated.query) } });

@@ -1,0 +1,18 @@
+import { Router } from "express";
+import { asyncHandler } from "../../core/http/async-handler.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { authorize } from "../../middlewares/authorize.js";
+import { validate } from "../../middlewares/validate.js";
+import { createLeadController, deleteLeadController, getLeadController, leadHistoryController, leadSummaryController, listLeadsController, restoreLeadController, updateLeadController } from "./lead.controller.js";
+import { createLeadSchema, leadIdSchema, leadSummarySchema, listLeadsSchema, updateLeadSchema } from "./lead.validation.js";
+const router = Router();
+router.use(authenticate);
+router.get("/summary", validate(leadSummarySchema), asyncHandler(leadSummaryController));
+router.get("/", validate(listLeadsSchema), asyncHandler(listLeadsController));
+router.post("/", validate(createLeadSchema), asyncHandler(createLeadController));
+router.get("/:id/history", validate(leadIdSchema), asyncHandler(leadHistoryController));
+router.post("/:id/restore", authorize("ADMIN"), validate(leadIdSchema), asyncHandler(restoreLeadController));
+router.get("/:id", validate(leadIdSchema), asyncHandler(getLeadController));
+router.patch("/:id", validate(updateLeadSchema), asyncHandler(updateLeadController));
+router.delete("/:id", validate(leadIdSchema), asyncHandler(deleteLeadController));
+export default router;

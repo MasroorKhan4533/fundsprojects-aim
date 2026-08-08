@@ -38,10 +38,9 @@ export const listTargets = async (query, actor) => {
   if (query.assignedTo) filter.assignedTo = query.assignedTo;
   if (query.focusStage) filter.focusStage = query.focusStage;
   if (query.dateFrom || query.dateTo) {
-    const targetDateRange = {};
-    if (query.dateFrom) targetDateRange.$gte = query.dateFrom;
-    if (query.dateTo) targetDateRange.$lte = query.dateTo;
-    filter.targetDate = mongoose.trusted(targetDateRange);
+    filter.targetDate = {};
+    if (query.dateFrom) filter.targetDate.$gte = query.dateFrom;
+    if (query.dateTo) filter.targetDate.$lte = query.dateTo;
   }
   applyVisibility(filter, actor);
 

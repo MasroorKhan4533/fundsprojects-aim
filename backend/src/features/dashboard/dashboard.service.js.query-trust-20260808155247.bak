@@ -13,10 +13,9 @@ const leadScope = (query, actor) => {
   const owner = actor.role === "ADMIN" ? query.assignedTo : String(actor._id);
   if (owner) match.assignedTo = new mongoose.Types.ObjectId(owner);
   if (query.dateFrom || query.dateTo) {
-    const createdAtRange = {};
-    if (query.dateFrom) createdAtRange.$gte = startOfDay(query.dateFrom);
-    if (query.dateTo) createdAtRange.$lte = endOfDay(query.dateTo);
-    match.createdAt = mongoose.trusted(createdAtRange);
+    match.createdAt = {};
+    if (query.dateFrom) match.createdAt.$gte = startOfDay(query.dateFrom);
+    if (query.dateTo) match.createdAt.$lte = endOfDay(query.dateTo);
   }
   return match;
 };
@@ -28,7 +27,7 @@ export const getAimDashboard = async (query, actor) => {
     User.countDocuments({ status: "ACTIVE" }),
     Lead.countDocuments(leadMatch),
     Lead.aggregate([{ $match: leadMatch }, { $group: { _id: "$industry", count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 6 }]),
-    Lead.find({ ...leadMatch, nextFollowUpDate: mongoose.trusted({ $ne: null, $gte: new Date() }) }).select("permanentLeadId companyName nextAction nextFollowUpDate assignedTo").populate("assignedTo", "userId fullName").sort({ nextFollowUpDate: 1 }).limit(7).lean(),
+    Lead.find({ ...leadMatch, nextFollowUpDate: { $ne: null, $gte: new Date() } }).select("permanentLeadId companyName nextAction nextFollowUpDate assignedTo").populate("assignedTo", "userId fullName").sort({ nextFollowUpDate: 1 }).limit(7).lean(),
   ]);
 
   const actuals = { ...zeroActuals(), leads: leadCount };
