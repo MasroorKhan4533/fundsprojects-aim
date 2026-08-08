@@ -55,8 +55,14 @@ jobs:
 
       - name: Backend quality gate
         working-directory: backend
+        env:
+          NODE_ENV: test
+          MONGODB_URI: mongodb://127.0.0.1:27017/fundsprojects_aim_test
+          MONGO_URI: mongodb://127.0.0.1:27017/fundsprojects_aim_test
+          DATABASE_URL: mongodb://127.0.0.1:27017/fundsprojects_aim_test
         run: |
           set -euo pipefail
+          echo "CI_MONGODB_URI_GREEN"
           npm ci
           npm run check
 
