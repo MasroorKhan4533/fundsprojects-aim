@@ -31,6 +31,7 @@ start_backend() {
     --name "$BACKEND_NAME" \
     --restart unless-stopped \
     --network "$NETWORK_NAME" \
+    --network-alias backend \
     --env-file "$ENV_FILE" \
     -p 127.0.0.1:5001:5001 \
     "$image" >/dev/null
