@@ -1,0 +1,66 @@
+name: AWS OIDC Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - production-v1
+    paths:
+      - ".github/workflows/aws-oidc-check.yml"
+      - "infra/aws/github-oidc/**"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: fundsprojects-aim-staging-oidc
+  cancel-in-progress: false
+
+jobs:
+  verify-aws-oidc:
+    name: Verify short-lived AWS authentication
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::800591602204:role/fundsprojects-aim-github-staging-deploy-role
+          aws-region: ap-south-1
+          role-session-name: fundsprojects-aim-github-oidc
+
+      - name: Verify AWS identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          ARN="$(aws sts get-caller-identity --query Arn --output text)"
+
+          echo "AWS account: $ACCOUNT"
+          echo "AWS assumed role: $ARN"
+
+          test "$ACCOUNT" = "800591602204"
+          echo "OIDC_IDENTITY_GREEN"
+
+      - name: Verify deployment targets are readable
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws ecr describe-repositories             --repository-names               fundsprojects-aim/backend               fundsprojects-aim/frontend             >/dev/null
+
+          STATE="$(aws ec2 describe-instances             --instance-ids i-0eb69c3c3e0f1abb9             --query 'Reservations[0].Instances[0].State.Name'             --output text)"
+
+          echo "EC2 state: $STATE"
+          test "$STATE" = "running"
+
+          echo "OIDC_TARGETS_GREEN"
+
+      - name: OIDC checkpoint
+        run: echo "CP-9.3_GITHUB_AWS_OIDC_GREEN"
