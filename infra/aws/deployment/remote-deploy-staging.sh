@@ -12,6 +12,7 @@ BACKEND_NAME="fundsprojects-aim-backend"
 FRONTEND_NAME="fundsprojects-aim-frontend"
 NETWORK_NAME="fundsprojects-aim-staging-net"
 ENV_FILE="/opt/fundsprojects/staging.env"
+STAGING_FRONTEND_URL="${STAGING_FRONTEND_URL:-https://staging.fundsaudit.co.in}"
 
 PREV_BACKEND_IMAGE=""
 PREV_FRONTEND_IMAGE=""
@@ -23,6 +24,23 @@ log() {
 
 container_image() {
   docker inspect -f '{{.Config.Image}}' "$1" 2>/dev/null || true
+}
+
+enforce_runtime_security_env() {
+  local key value
+  for key in FRONTEND_URL COOKIE_SECURE; do
+    case "$key" in
+      FRONTEND_URL) value="$STAGING_FRONTEND_URL" ;;
+      COOKIE_SECURE) value="true" ;;
+    esac
+
+    if grep -q "^${key}=" "$ENV_FILE"; then
+      sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    else
+      printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+    fi
+  done
+  chmod 600 "$ENV_FILE"
 }
 
 start_backend() {
@@ -108,6 +126,7 @@ trap rollback ERR
 log "1/8 PRECHECK"
 
 test -f "$ENV_FILE"
+enforce_runtime_security_env
 docker network inspect "$NETWORK_NAME" >/dev/null
 docker inspect "$BACKEND_NAME" >/dev/null
 docker inspect "$FRONTEND_NAME" >/dev/null

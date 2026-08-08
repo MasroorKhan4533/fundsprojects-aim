@@ -148,7 +148,7 @@ else
 fi
 
 put_string_if_missing "$PARAM_BASE/app/bootstrap_admin_email" "admin@fundsprojects.local"
-put_string_if_missing "$PARAM_BASE/app/frontend_url" "http://${PUBLIC_IP}"
+aws ssm put-parameter --name "$PARAM_BASE/app/frontend_url" --type String --value "https://staging.fundsaudit.co.in" --overwrite >/dev/null
 put_string_if_missing "$PARAM_BASE/storage/documents_bucket" "$DOCUMENTS_BUCKET"
 put_string_if_missing "$PARAM_BASE/storage/backups_bucket" "$BACKUPS_BUCKET"
 
@@ -226,7 +226,7 @@ chmod 700 /opt/fundsprojects
 cat > /opt/fundsprojects/staging.env <<ENVVARS
 NODE_ENV=production
 PORT=5001
-FRONTEND_URL=http://${PUBLIC_IP}
+FRONTEND_URL=https://staging.fundsaudit.co.in
 MONGODB_URI=mongodb://${MONGO_USER}:${MONGO_PASSWORD}@mongodb:27017/fundsprojects_aim?authSource=admin
 MONGODB_MAX_POOL_SIZE=20
 MONGODB_MIN_POOL_SIZE=2
@@ -237,7 +237,7 @@ REFRESH_TOKEN_TTL_DAYS=7
 REMEMBER_ME_REFRESH_TOKEN_TTL_DAYS=30
 ACCESS_COOKIE_NAME=aim_access_token
 REFRESH_COOKIE_NAME=aim_refresh_token
-COOKIE_SECURE=false
+COOKIE_SECURE=true
 ACTIVATION_TOKEN_TTL_MINUTES=1440
 PASSWORD_RESET_TOKEN_TTL_MINUTES=30
 BCRYPT_ROUNDS=12
@@ -453,7 +453,7 @@ echo "Staging URL: http://${PUBLIC_IP}"
 echo "Admin email: admin@fundsprojects.local"
 echo "Admin password: the staging password you entered (stored securely in SSM)"
 echo ""
-echo "⚠️ Current staging transport is HTTP, so COOKIE_SECURE=false only until HTTPS is added in Phase 9."
+echo "⚠️ Current staging transport is HTTP, so COOKIE_SECURE=true only until HTTPS is added in Phase 9."
 echo "⚠️ Transactional email remains EMAIL_DELIVERY_MODE=test until SES/email provider setup."
 echo ""
 echo "=============================================="
