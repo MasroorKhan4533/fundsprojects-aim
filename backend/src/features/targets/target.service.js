@@ -1,293 +1,117 @@
-import { Op } from "sequelize";
-
-import DailyTarget from "./daily-target.model.js";
-
+import mongoose from "mongoose";
+import { AppError } from "../../core/errors/app-error.js";
+import { recordAudit } from "../audit/audit.service.js";
 import User from "../users/user.model.js";
-import Lead from "../leads/lead.model.js";
-import Activity from "../c1/activity.model.js";
-import FollowUp from "../c1/follow-up.model.js";
-import CommercialProfile from "../c3/commercial-profile.model.js";
+import Target from "./target.model.js";
 
-/*
-  Calculates target versus actual automatically.
-*/
+const METRIC_KEYS = ["leads", "emails", "messages", "calls", "meetings", "c1", "c2", "c3", "c4", "proposals", "revenue"];
 
-const dayRange = (
-  date
-) => {
-  const start =
-    new Date(
-      `${date}T00:00:00`
-    );
+const safeTarget = (target) => ({
+  id: String(target._id),
+  targetDate: target.targetDate,
+  assignedTo: target.assignedTo && typeof target.assignedTo === "object" ? {
+    id: String(target.assignedTo._id),
+    userId: target.assignedTo.userId,
+    fullName: target.assignedTo.fullName,
+    email: target.assignedTo.email,
+  } : { id: String(target.assignedTo) },
+  focusStage: target.focusStage,
+  metrics: Object.fromEntries(METRIC_KEYS.map((key) => [key, Number(target.metrics?.[key] || 0)])),
+  notes: target.notes || "",
+  createdAt: target.createdAt,
+  updatedAt: target.updatedAt,
+});
 
-  const end =
-    new Date(
-      `${date}T23:59:59.999`
-    );
-
-  return {
-    start,
-    end,
-  };
+const assertActiveAssignee = async (userId) => {
+  const user = await User.findOne({ _id: userId, status: "ACTIVE" });
+  if (!user) throw new AppError("Target assignee must be an active user", { statusCode: 422, code: "TARGET_ASSIGNEE_INVALID" });
+  return user;
 };
 
-export const calculateActuals =
-  async (
-    userId,
-    targetDate
-  ) => {
-    const {
-      start,
-      end,
-    } =
-      dayRange(
-        targetDate
-      );
+const applyVisibility = (filter, actor) => {
+  if (actor.role !== "ADMIN") filter.assignedTo = actor._id;
+  return filter;
+};
 
-    const [
-      leads,
-      calls,
-      meetings,
-      followUps,
-      proposals,
-      closures,
-    ] =
-      await Promise.all([
-        Lead.count({
-          where: {
-            createdById:
-              userId,
+export const listTargets = async (query, actor) => {
+  const filter = {};
+  if (query.assignedTo) filter.assignedTo = query.assignedTo;
+  if (query.focusStage) filter.focusStage = query.focusStage;
+  if (query.dateFrom || query.dateTo) {
+    const targetDateRange = {};
+    if (query.dateFrom) targetDateRange.$gte = query.dateFrom;
+    if (query.dateTo) targetDateRange.$lte = query.dateTo;
+    filter.targetDate = mongoose.trusted(targetDateRange);
+  }
+  applyVisibility(filter, actor);
 
-            createdAt: {
-              [Op.between]:
-                [
-                  start,
-                  end,
-                ],
-            },
-          },
-        }),
+  const [items, total] = await Promise.all([
+    Target.find(filter).populate("assignedTo", "userId fullName email").sort({ targetDate: -1, createdAt: -1 }).skip((query.page - 1) * query.limit).limit(query.limit),
+    Target.countDocuments(filter),
+  ]);
 
-        Activity.count({
-          where: {
-            performedById:
-              userId,
+  return { items: items.map(safeTarget), meta: { page: query.page, limit: query.limit, total, totalPages: Math.max(1, Math.ceil(total / query.limit)) } };
+};
 
-            activityType:
-              "CALL",
+export const createTarget = async (body, actor, context) => {
+  await assertActiveAssignee(body.assignedTo);
+  if (actor.role !== "ADMIN" && String(actor._id) !== body.assignedTo) {
+    throw new AppError("You can only create a target for yourself", { statusCode: 403, code: "TARGET_ASSIGNMENT_FORBIDDEN" });
+  }
+  try {
+    const target = await Target.create({ ...body, createdBy: actor._id, updatedBy: actor._id });
+    await recordAudit({ action: "TARGET.CREATED", actorUserId: actor._id, targetUserId: body.assignedTo, context, metadata: { targetId: String(target._id), targetDate: body.targetDate, focusStage: body.focusStage } });
+    await target.populate("assignedTo", "userId fullName email");
+    return safeTarget(target);
+  } catch (error) {
+    if (error?.code === 11000) throw new AppError("A target already exists for this user, date and focus stage", { statusCode: 409, code: "TARGET_DUPLICATE" });
+    throw error;
+  }
+};
 
-            activityAt: {
-              [Op.between]:
-                [
-                  start,
-                  end,
-                ],
-            },
-          },
-        }),
+export const updateTarget = async (id, body, actor, context) => {
+  const target = await Target.findById(id);
+  if (!target) throw new AppError("Target not found", { statusCode: 404, code: "TARGET_NOT_FOUND" });
+  if (actor.role !== "ADMIN" && String(target.assignedTo) !== String(actor._id)) {
+    throw new AppError("You cannot edit this target", { statusCode: 403, code: "TARGET_EDIT_FORBIDDEN" });
+  }
+  await assertActiveAssignee(body.assignedTo);
+  if (actor.role !== "ADMIN" && String(actor._id) !== body.assignedTo) {
+    throw new AppError("You cannot reassign this target", { statusCode: 403, code: "TARGET_REASSIGN_FORBIDDEN" });
+  }
+  Object.assign(target, body, { updatedBy: actor._id });
+  try {
+    await target.save();
+  } catch (error) {
+    if (error?.code === 11000) throw new AppError("A target already exists for this user, date and focus stage", { statusCode: 409, code: "TARGET_DUPLICATE" });
+    throw error;
+  }
+  await recordAudit({ action: "TARGET.UPDATED", actorUserId: actor._id, targetUserId: body.assignedTo, context, metadata: { targetId: id } });
+  await target.populate("assignedTo", "userId fullName email");
+  return safeTarget(target);
+};
 
-        Activity.count({
-          where: {
-            performedById:
-              userId,
+export const deleteTarget = async (id, actor, context) => {
+  const target = await Target.findById(id);
+  if (!target) throw new AppError("Target not found", { statusCode: 404, code: "TARGET_NOT_FOUND" });
+  if (actor.role !== "ADMIN" && String(target.assignedTo) !== String(actor._id)) {
+    throw new AppError("You cannot delete this target", { statusCode: 403, code: "TARGET_DELETE_FORBIDDEN" });
+  }
+  await target.deleteOne();
+  await recordAudit({ action: "TARGET.DELETED", actorUserId: actor._id, targetUserId: target.assignedTo, context, metadata: { targetId: id } });
+};
 
-            activityType: {
-              [Op.in]: [
-                "ONLINE_MEETING",
-                "OFFLINE_MEETING",
-              ],
-            },
+export const aggregateTargets = async ({ assignedTo, dateFrom, dateTo } = {}, actor) => {
+  const match = {};
+  if (assignedTo) match.assignedTo = new mongoose.Types.ObjectId(assignedTo);
+  if (dateFrom || dateTo) {
+    match.targetDate = {};
+    if (dateFrom) match.targetDate.$gte = dateFrom;
+    if (dateTo) match.targetDate.$lte = dateTo;
+  }
+  if (actor.role !== "ADMIN") match.assignedTo = new mongoose.Types.ObjectId(actor._id);
 
-            activityAt: {
-              [Op.between]:
-                [
-                  start,
-                  end,
-                ],
-            },
-          },
-        }),
-
-        FollowUp.count({
-          where: {
-            assignedUserId:
-              userId,
-
-            status:
-              "COMPLETED",
-
-            updatedAt: {
-              [Op.between]:
-                [
-                  start,
-                  end,
-                ],
-            },
-          },
-        }),
-
-        CommercialProfile.count({
-          where: {
-            updatedById:
-              userId,
-
-            commercialStatus: {
-              [Op.in]: [
-                "PROPOSAL_SENT",
-                "QUOTATION_SENT",
-                "NEGOTIATION",
-                "COMMERCIAL_AGREED",
-              ],
-            },
-
-            updatedAt: {
-              [Op.between]:
-                [
-                  start,
-                  end,
-                ],
-            },
-          },
-        }),
-
-        Lead.count({
-          where: {
-            assignedOwnerId:
-              userId,
-
-            stage:
-              "WON",
-
-            updatedAt: {
-              [Op.between]:
-                [
-                  start,
-                  end,
-                ],
-            },
-          },
-        }),
-      ]);
-
-    return {
-      leads,
-      calls,
-      meetings,
-      followUps,
-      proposals,
-      closures,
-    };
-  };
-
-export const saveTarget =
-  async (
-    payload,
-    currentUser
-  ) => {
-    const user =
-      await User.findByPk(
-        payload.userId
-      );
-
-    if (!user) {
-      const error =
-        new Error(
-          "User not found"
-        );
-
-      error.status =
-        404;
-
-      throw error;
-    }
-
-    const existing =
-      await DailyTarget.findOne({
-        where: {
-          userId:
-            payload.userId,
-
-          targetDate:
-            payload.targetDate,
-        },
-      });
-
-    if (existing) {
-      await existing.update(
-        payload
-      );
-
-      return existing;
-    }
-
-    return DailyTarget.create({
-      ...payload,
-
-      createdById:
-        currentUser.id,
-    });
-  };
-
-export const listTargets =
-  async () => {
-    const targets =
-      await DailyTarget.findAll({
-        include: [
-          {
-            model: User,
-            as: "user",
-
-            attributes: [
-              "id",
-              "fullName",
-              "email",
-            ],
-          },
-        ],
-
-        order: [
-          [
-            "targetDate",
-            "DESC",
-          ],
-        ],
-      });
-
-    return Promise.all(
-      targets.map(
-        async (
-          target
-        ) => ({
-          ...target.toJSON(),
-
-          actuals:
-            await calculateActuals(
-              target.userId,
-              target.targetDate
-            ),
-        })
-      )
-    );
-  };
-
-export const deleteTarget =
-  async (id) => {
-    const target =
-      await DailyTarget.findByPk(
-        id
-      );
-
-    if (!target) {
-      const error =
-        new Error(
-          "Target not found"
-        );
-
-      error.status =
-        404;
-
-      throw error;
-    }
-
-    await target.destroy();
-  };
+  const sums = Object.fromEntries(METRIC_KEYS.map((key) => [key, { $sum: `$metrics.${key}` }]));
+  const [row] = await Target.aggregate([{ $match: match }, { $group: { _id: null, count: { $sum: 1 }, ...sums } }]);
+  return { count: row?.count || 0, ...Object.fromEntries(METRIC_KEYS.map((key) => [key, row?.[key] || 0])) };
+};

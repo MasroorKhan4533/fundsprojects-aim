@@ -1,0 +1,11 @@
+import { Router } from "express";
+import { asyncHandler } from "../../core/http/async-handler.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { authorize } from "../../middlewares/authorize.js";
+import { commitLeadImportController, previewLeadImportController } from "./lead-import.controller.js";
+import { leadImportUpload } from "./lead-import.upload.js";
+const router = Router();
+router.use(authenticate, authorize("ADMIN"));
+router.post("/leads/preview", leadImportUpload.single("file"), asyncHandler(previewLeadImportController));
+router.post("/leads/commit", leadImportUpload.single("file"), asyncHandler(commitLeadImportController));
+export default router;

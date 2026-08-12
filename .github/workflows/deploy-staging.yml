@@ -1,0 +1,297 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches:
+      - production-v1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: fundsprojects-aim-staging-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  AWS_ACCOUNT_ID: "800591602204"
+  AWS_ROLE_ARN: arn:aws:iam::800591602204:role/fundsprojects-aim-github-staging-deploy-role
+  INSTANCE_ID: i-0eb69c3c3e0f1abb9
+  BACKEND_REPOSITORY: fundsprojects-aim/backend
+  FRONTEND_REPOSITORY: fundsprojects-aim/frontend
+  STAGING_URL: https://staging.fundsaudit.co.in
+
+jobs:
+  quality-gate:
+    name: Quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Use Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend quality gate
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          # IMPORTANT: backend/tests/setup.js consumes MONGODB_TEST_URI and
+          # intentionally assigns it to MONGODB_URI for the test process.
+          MONGODB_TEST_URI: mongodb://127.0.0.1:27017/fundsprojects_aim_test
+        run: |
+          set -euo pipefail
+          case "$MONGODB_TEST_URI" in
+            mongodb://127.0.0.1:27017/fundsprojects_aim_test) ;;
+            *)
+              echo "❌ Refusing to run CI tests against a non-local/non-test database."
+              exit 1
+              ;;
+          esac
+          echo "CI_MONGODB_TEST_URI_GREEN"
+          npm ci
+          npm run check
+
+      - name: Frontend quality gate
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run check
+
+      - name: Secret scan
+        run: ./scripts/ci/check-secrets.sh
+
+      - name: Quality checkpoint
+        run: echo "CP-9.4_QUALITY_GATE_GREEN"
+
+  build-push:
+    name: Build and push immutable ECR images
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    outputs:
+      backend-image: ${{ steps.images.outputs.backend-image }}
+      frontend-image: ${{ steps.images.outputs.frontend-image }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: fpa-staging-build-${{ github.run_id }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.2.0
+
+      - name: Create immutable image names
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          TAG="staging-${GITHUB_RUN_ID}-${SHORT_SHA}"
+
+          BACKEND_IMAGE="${REGISTRY}/${BACKEND_REPOSITORY}:${TAG}"
+          FRONTEND_IMAGE="${REGISTRY}/${FRONTEND_REPOSITORY}:${TAG}"
+
+          echo "backend-image=${BACKEND_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "frontend-image=${FRONTEND_IMAGE}" >> "$GITHUB_OUTPUT"
+
+          echo "Deployment tag: ${TAG}"
+
+      - name: Build and push backend AMD64 image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            -t "${{ steps.images.outputs.backend-image }}" \
+            backend
+
+      - name: Build and push frontend AMD64 image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --sbom=false \
+            --push \
+            --build-arg VITE_API_URL=/api/v1 \
+            -t "${{ steps.images.outputs.frontend-image }}" \
+            frontend
+
+      - name: ECR checkpoint
+        run: echo "CP-9.4_ECR_IMAGES_GREEN"
+
+  deploy:
+    name: Deploy through AWS Systems Manager
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: fpa-staging-deploy-${{ github.run_id }}
+
+      - name: Send immutable deployment to EC2
+        id: ssm
+        shell: bash
+        env:
+          BACKEND_IMAGE: ${{ needs.build-push.outputs.backend-image }}
+          FRONTEND_IMAGE: ${{ needs.build-push.outputs.frontend-image }}
+        run: |
+          set -euo pipefail
+
+          SCRIPT_B64="$(base64 -w 0 infra/aws/deployment/remote-deploy-staging.sh)"
+
+          python3 - "$SCRIPT_B64" "$BACKEND_IMAGE" "$FRONTEND_IMAGE" > /tmp/ssm-params.json <<'PY'
+          import json
+          import sys
+
+          script_b64, backend_image, frontend_image = sys.argv[1:4]
+
+          commands = [
+              "echo '{}' | base64 -d > /tmp/fpa-remote-deploy.sh".format(script_b64),
+              "chmod 700 /tmp/fpa-remote-deploy.sh",
+              "export AWS_REGION='ap-south-1'",
+              "export ACCOUNT_ID='800591602204'",
+              "export BACKEND_IMAGE='{}'".format(backend_image),
+              "export FRONTEND_IMAGE='{}'".format(frontend_image),
+              "/bin/bash /tmp/fpa-remote-deploy.sh",
+              "rm -f /tmp/fpa-remote-deploy.sh",
+          ]
+
+          print(json.dumps({"commands": commands}))
+          PY
+
+          COMMAND_ID="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "FundsProjects AIM automated staging deployment ${GITHUB_SHA}" \
+              --timeout-seconds 600 \
+              --parameters file:///tmp/ssm-params.json \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+
+          echo "command-id=${COMMAND_ID}" >> "$GITHUB_OUTPUT"
+          echo "SSM command: ${COMMAND_ID}"
+
+      - name: Wait for SSM deployment
+        shell: bash
+        env:
+          COMMAND_ID: ${{ steps.ssm.outputs.command-id }}
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 60); do
+            STATUS="$(
+              aws ssm get-command-invocation \
+                --command-id "$COMMAND_ID" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text
+            )"
+
+            echo "SSM status: ${STATUS}"
+
+            case "$STATUS" in
+              Success)
+                break
+                ;;
+              Failed|Cancelled|TimedOut)
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$INSTANCE_ID" \
+                  --query '{Status:Status,ResponseCode:ResponseCode,Output:StandardOutputContent,Errors:StandardErrorContent}' \
+                  --output json
+                exit 1
+                ;;
+            esac
+
+            sleep 10
+          done
+
+          FINAL_STATUS="$(
+            aws ssm get-command-invocation \
+              --command-id "$COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query Status \
+              --output text
+          )"
+
+          if [[ "$FINAL_STATUS" != "Success" ]]; then
+            echo "❌ SSM deployment did not complete within the workflow timeout."
+            exit 1
+          fi
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,ResponseCode:ResponseCode,Output:StandardOutputContent,Errors:StandardErrorContent}' \
+            --output json
+
+      - name: Public HTTPS health verification
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 10 \
+              "${STAGING_URL}/api/v1/health/ready" \
+              >/tmp/fpa-public-health.json; then
+              cat /tmp/fpa-public-health.json
+              rm -f /tmp/fpa-public-health.json
+              echo "PUBLIC_HTTPS_HEALTH_GREEN"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "❌ Public HTTPS health verification failed."
+          exit 1
+
+      - name: Deployment checkpoint
+        run: |
+          echo "CP-9.4_AUTOMATIC_STAGING_DEPLOY_GREEN"
+          echo "Staging URL: ${STAGING_URL}"

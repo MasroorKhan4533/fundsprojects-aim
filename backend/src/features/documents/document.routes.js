@@ -1,35 +1,14 @@
 import { Router } from "express";
-
+import { asyncHandler } from "../../core/http/async-handler.js";
 import { authenticate } from "../../middlewares/authenticate.js";
-import { upload } from "../../middlewares/upload.js";
-
-import * as controller from "./document.controller.js";
-
-const router = Router({
-  mergeParams: true,
-});
-
+import { validate } from "../../middlewares/validate.js";
+import { deleteDocumentController, downloadDocumentController, listLeadDocumentsController, uploadLeadDocumentController } from "./document.controller.js";
+import { documentUpload } from "./document.upload.js";
+import { documentParamsSchema, leadDocumentParamsSchema, uploadDocumentSchema } from "./document.validation.js";
+const router = Router();
 router.use(authenticate);
-
-router.get(
-  "/",
-  controller.list
-);
-
-router.post(
-  "/url",
-  controller.createUrl
-);
-
-router.post(
-  "/upload",
-  upload.single("file"),
-  controller.uploadFile
-);
-
-router.delete(
-  "/:documentId",
-  controller.remove
-);
-
+router.get("/leads/:leadId", validate(leadDocumentParamsSchema), asyncHandler(listLeadDocumentsController));
+router.post("/leads/:leadId", documentUpload.single("file"), validate(uploadDocumentSchema), asyncHandler(uploadLeadDocumentController));
+router.get("/:id/download", validate(documentParamsSchema), asyncHandler(downloadDocumentController));
+router.delete("/:id", validate(documentParamsSchema), asyncHandler(deleteDocumentController));
 export default router;

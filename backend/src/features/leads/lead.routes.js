@@ -1,129 +1,18 @@
 import { Router } from "express";
-
-import {
-  addComment,
-  addContact,
-  assign,
-  audits,
-  checkDuplicates,
-  comments,
-  create,
-  deleteContact,
-  getOne,
-  list,
-  remove,
-  restore,
-  update,
-  updateContact,
-} from "./lead.controller.js";
-
+import { asyncHandler } from "../../core/http/async-handler.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { authorize } from "../../middlewares/authorize.js";
 import { validate } from "../../middlewares/validate.js";
-
-import {
-  addContactSchema,
-  assignLeadSchema,
-  commentSchema,
-  contactIdSchema,
-  createLeadSchema,
-  duplicateCheckSchema,
-  leadIdSchema,
-  listLeadSchema,
-  updateContactSchema,
-  updateLeadSchema,
-} from "./lead.validation.js";
-
+import { createLeadController, deleteLeadController, getLeadController, leadHistoryController, leadSummaryController, listLeadsController, restoreLeadController, updateLeadController } from "./lead.controller.js";
+import { createLeadSchema, leadIdSchema, leadSummarySchema, listLeadsSchema, updateLeadSchema } from "./lead.validation.js";
 const router = Router();
-
 router.use(authenticate);
-
-router.get(
-  "/",
-  validate(listLeadSchema),
-  list
-);
-
-router.post(
-  "/",
-  validate(createLeadSchema),
-  create
-);
-
-router.post(
-  "/check-duplicates",
-  validate(duplicateCheckSchema),
-  checkDuplicates
-);
-
-router.get(
-  "/:id",
-  validate(leadIdSchema),
-  getOne
-);
-
-router.patch(
-  "/:id",
-  validate(updateLeadSchema),
-  update
-);
-
-router.patch(
-  "/:id/assign",
-  authorize("ADMIN"),
-  validate(assignLeadSchema),
-  assign
-);
-
-router.delete(
-  "/:id",
-  authorize("ADMIN"),
-  validate(leadIdSchema),
-  remove
-);
-
-router.post(
-  "/:id/restore",
-  authorize("ADMIN"),
-  validate(leadIdSchema),
-  restore
-);
-
-router.post(
-  "/:id/contacts",
-  validate(addContactSchema),
-  addContact
-);
-
-router.patch(
-  "/:id/contacts/:contactId",
-  validate(updateContactSchema),
-  updateContact
-);
-
-router.delete(
-  "/:id/contacts/:contactId",
-  validate(contactIdSchema),
-  deleteContact
-);
-
-router.post(
-  "/:id/comments",
-  validate(commentSchema),
-  addComment
-);
-
-router.get(
-  "/:id/comments",
-  validate(leadIdSchema),
-  comments
-);
-
-router.get(
-  "/:id/audits",
-  authorize("ADMIN"),
-  validate(leadIdSchema),
-  audits
-);
-
+router.get("/summary", validate(leadSummarySchema), asyncHandler(leadSummaryController));
+router.get("/", validate(listLeadsSchema), asyncHandler(listLeadsController));
+router.post("/", validate(createLeadSchema), asyncHandler(createLeadController));
+router.get("/:id/history", validate(leadIdSchema), asyncHandler(leadHistoryController));
+router.post("/:id/restore", authorize("ADMIN"), validate(leadIdSchema), asyncHandler(restoreLeadController));
+router.get("/:id", validate(leadIdSchema), asyncHandler(getLeadController));
+router.patch("/:id", validate(updateLeadSchema), asyncHandler(updateLeadController));
+router.delete("/:id", validate(leadIdSchema), asyncHandler(deleteLeadController));
 export default router;

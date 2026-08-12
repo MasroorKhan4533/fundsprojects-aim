@@ -1,1055 +1,201 @@
-import { Op } from "sequelize";
-
-import { sequelize } from "../../config/database.js";
-
+import mongoose from "mongoose";
+import { AppError } from "../../core/errors/app-error.js";
+import Counter from "../auth/models/counter.model.js";
+import { recordAudit } from "../audit/audit.service.js";
 import User from "../users/user.model.js";
-
 import Lead from "./lead.model.js";
-import LeadContact from "./lead-contact.model.js";
-import LeadComment from "./lead-comment.model.js";
 import LeadAudit from "./lead-audit.model.js";
 
-const safeUserAttributes = [
-  "id",
-  "fullName",
-  "email",
-  "role",
-  "status",
-];
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const cleanStringArray = (items = []) => [...new Set(items.map((item) => String(item).trim()).filter(Boolean))];
+const toDateOrNull = (value) => value ? new Date(value) : null;
 
-export const requireLead = async (
-  id,
-  options = {}
-) => {
-  const lead = await Lead.findByPk(id, options);
+const contextFields = (context = {}) => ({ requestId: context.requestId || "", ip: context.ip || "", userAgent: context.userAgent || "" });
 
-  if (!lead) {
-    const error = new Error("Lead not found");
-    error.status = 404;
-    throw error;
+const diffLead = (before, after) => {
+  const changes = {};
+  for (const key of Object.keys(after)) {
+    if (["id", "permanentLeadId", "createdAt", "updatedAt"].includes(key)) continue;
+    if (JSON.stringify(before?.[key] ?? null) !== JSON.stringify(after?.[key] ?? null)) changes[key] = { before: before?.[key] ?? null, after: after?.[key] ?? null };
   }
-
-  return lead;
+  return changes;
 };
 
-export const requireLeadEditAccess = (lead, user) => {
-  if (
-    user.role !== "ADMIN" &&
-    lead.assignedOwnerId !== user.id
-  ) {
-    const error = new Error(
-      "You can edit only leads assigned to you"
-    );
+const safeUser = (value) => value && typeof value === "object" ? {
+  id: String(value._id), userId: value.userId, fullName: value.fullName, email: value.email,
+} : value ? { id: String(value) } : null;
 
-    error.status = 403;
-    throw error;
-  }
-};
+export const presentLead = (lead) => ({
+  id: String(lead._id),
+  permanentLeadId: lead.permanentLeadId,
+  companyName: lead.companyName,
+  primaryContact: lead.primaryContact,
+  contacts: lead.contacts || [],
+  industry: lead.industry,
+  subSector: lead.subSector || "",
+  businessModels: lead.businessModels || [],
+  companySize: lead.companySize || "",
+  employeeStrength: lead.employeeStrength || "",
+  annualTurnover: Number(lead.annualTurnover || 0),
+  estimatedBudget: Number(lead.estimatedBudget || 0),
+  country: lead.country || "",
+  state: lead.state || "",
+  city: lead.city || "",
+  websiteUrl: lead.websiteUrl || "",
+  linkedinPostUrl: lead.linkedinPostUrl || "",
+  postDate: lead.postDate,
+  postContent: lead.postContent || "",
+  businessRequirementAnalysis: lead.businessRequirementAnalysis || "",
+  buyingIntentScore: Number(lead.buyingIntentScore || 0),
+  leadPriority: lead.leadPriority,
+  personalizedComment: lead.personalizedComment || "",
+  firstMessage: lead.firstMessage || "",
+  followUps: lead.followUps || [],
+  salesStage: lead.salesStage,
+  assignedTo: safeUser(lead.assignedTo),
+  source: lead.source,
+  temperature: lead.temperature,
+  decisionMakers: lead.decisionMakers || "",
+  companyOverview: lead.companyOverview || "",
+  painPoints: lead.painPoints || [],
+  internalComments: lead.internalComments || "",
+  nextAction: lead.nextAction || "",
+  nextFollowUpDate: lead.nextFollowUpDate,
+  attachmentUrl: lead.attachmentUrl || "",
+  researchNotes: lead.researchNotes || "",
+  deletedAt: lead.deletedAt,
+  createdAt: lead.createdAt,
+  updatedAt: lead.updatedAt,
+});
 
-const ensureValidOwner = async (
-  ownerId,
-  transaction
-) => {
-  const user = await User.findByPk(ownerId, {
-    transaction,
-  });
-
-  if (!user || user.status !== "ACTIVE") {
-    const error = new Error(
-      "Assigned owner must be an active user"
-    );
-
-    error.status = 400;
-    throw error;
-  }
-
+const requireActiveUser = async (id) => {
+  const user = await User.findOne({ _id: id, status: "ACTIVE" });
+  if (!user) throw new AppError("Assigned owner must be an active user", { statusCode: 422, code: "LEAD_OWNER_INVALID" });
   return user;
 };
 
-const createBusinessId = async (
-  transaction
-) => {
-  const [rows] = await sequelize.query(
-    "SELECT nextval('lead_business_id_seq') AS sequence_number",
-    { transaction }
-  );
-
-  const sequence = Number(
-    rows[0].sequence_number
-  );
-
-  return `AIM-L-${String(sequence).padStart(
-    6,
-    "0"
-  )}`;
+const requireLead = async (id, { includeDeleted = false } = {}) => {
+  const filter = { _id: id };
+  if (!includeDeleted) filter.deletedAt = null;
+  const lead = await Lead.findOne(filter).populate("assignedTo", "userId fullName email");
+  if (!lead) throw new AppError("Lead not found", { statusCode: 404, code: "LEAD_NOT_FOUND" });
+  return lead;
 };
 
-const audit = async ({
-  leadId,
-  action,
-  fieldName = null,
-  oldValue = null,
-  newValue = null,
-  changedById,
-  transaction,
-}) => {
-  await LeadAudit.create(
-    {
-      leadId,
-      action,
-      fieldName,
-      oldValue,
-      newValue,
-      changedById,
-    },
-    { transaction }
-  );
+const canMutate = (lead, actor) => actor.role === "ADMIN" || String(lead.assignedTo?._id || lead.assignedTo) === String(actor._id);
+
+const nextLeadId = async () => {
+  const counter = await Counter.findOneAndUpdate({ _id: "lead" }, { $inc: { sequence: 1 } }, { new: true, upsert: true, setDefaultsOnInsert: true });
+  return `AIM-L-${String(counter.sequence).padStart(6, "0")}`;
 };
 
-export const checkLeadDuplicates = async ({
-  companyName,
-  website,
-  email,
-  mobile,
-}) => {
-  const leadIds = new Set();
-
-  const leadConditions = [];
-
-  if (companyName) {
-    leadConditions.push({
-      companyName: {
-        [Op.iLike]: companyName.trim(),
-      },
-    });
-  }
-
-  if (website) {
-    leadConditions.push({
-      website: {
-        [Op.iLike]: website.trim(),
-      },
-    });
-  }
-
-  if (leadConditions.length) {
-    const matchingLeads = await Lead.findAll({
-      where: {
-        [Op.or]: leadConditions,
-      },
-      attributes: ["id"],
-    });
-
-    matchingLeads.forEach((lead) =>
-      leadIds.add(lead.id)
-    );
-  }
-
-  const contactConditions = [];
-
-  if (email) {
-    contactConditions.push({
-      email: {
-        [Op.iLike]: email.trim(),
-      },
-    });
-  }
-
-  if (mobile) {
-    contactConditions.push({
-      mobile: mobile.trim(),
-    });
-  }
-
-  if (contactConditions.length) {
-    const contacts = await LeadContact.findAll({
-      where: {
-        [Op.or]: contactConditions,
-      },
-      attributes: ["leadId"],
-    });
-
-    contacts.forEach((contact) =>
-      leadIds.add(contact.leadId)
-    );
-  }
-
-  if (!leadIds.size) {
-    return [];
-  }
-
-  return Lead.findAll({
-    where: {
-      id: {
-        [Op.in]: [...leadIds],
-      },
-    },
-
-    attributes: [
-      "id",
-      "businessId",
-      "companyName",
-      "website",
-      "stage",
-      "temperature",
-      "assignedOwnerId",
-    ],
-
-    include: [
-      {
-        model: LeadContact,
-        as: "contacts",
-        where: {
-          isPrimary: true,
-        },
-        required: false,
-      },
-    ],
-
-    limit: 10,
-  });
+const normalizeBody = (body) => {
+  const normalized = { ...body };
+  if (Object.prototype.hasOwnProperty.call(body, "businessModels")) normalized.businessModels = cleanStringArray(body.businessModels);
+  if (Object.prototype.hasOwnProperty.call(body, "painPoints")) normalized.painPoints = cleanStringArray(body.painPoints);
+  if (Object.prototype.hasOwnProperty.call(body, "postDate")) normalized.postDate = toDateOrNull(body.postDate);
+  if (Object.prototype.hasOwnProperty.call(body, "nextFollowUpDate")) normalized.nextFollowUpDate = toDateOrNull(body.nextFollowUpDate);
+  if (Object.prototype.hasOwnProperty.call(body, "followUps")) normalized.followUps = (body.followUps || []).map((item) => ({ ...item, scheduledAt: toDateOrNull(item.scheduledAt) })).sort((a, b) => a.sequence - b.sequence);
+  return normalized;
 };
 
-export const createLead = async (
-  payload,
-  currentUser
-) => {
-  const possibleDuplicates =
-    await checkLeadDuplicates({
-      companyName: payload.companyName,
-      website: payload.website,
-      email: payload.primaryContact?.email,
-      mobile: payload.primaryContact?.mobile,
-    });
-
-  const transaction =
-    await sequelize.transaction();
-
-  try {
-    let assignedOwnerId = currentUser.id;
-
-    if (
-      currentUser.role === "ADMIN" &&
-      payload.assignedOwnerId
-    ) {
-      assignedOwnerId =
-        payload.assignedOwnerId;
-    }
-
-    await ensureValidOwner(
-      assignedOwnerId,
-      transaction
-    );
-
-    const businessId =
-      await createBusinessId(transaction);
-
-    const lead = await Lead.create(
-      {
-        businessId,
-
-        companyName:
-          payload.companyName.trim(),
-
-        website:
-          payload.website || null,
-
-        linkedinUrl:
-          payload.linkedinUrl || null,
-
-        sector: payload.sector,
-
-        subSector:
-          payload.subSector || null,
-
-        businessTypes:
-          payload.businessTypes || [],
-
-        companySize:
-          payload.companySize || null,
-
-        employeeStrength:
-          payload.employeeStrength ?? null,
-
-        annualTurnover:
-          payload.annualTurnover ?? null,
-
-        country: payload.country,
-
-        state: payload.state || null,
-
-        city: payload.city || null,
-
-        leadSource: payload.leadSource,
-
-        otherSourceDescription:
-          payload.otherSourceDescription ||
-          null,
-
-        estimatedProjectBudget:
-          payload.estimatedProjectBudget ??
-          null,
-
-        companyOverview:
-          payload.companyOverview || null,
-
-        painPoints:
-          payload.painPoints || null,
-
-        researchNotes:
-          payload.researchNotes || null,
-
-        assignedOwnerId,
-
-        createdById: currentUser.id,
-      },
-      { transaction }
-    );
-
-    await LeadContact.create(
-      {
-        leadId: lead.id,
-
-        fullName:
-          payload.primaryContact.fullName,
-
-        designation:
-          payload.primaryContact
-            .designation || null,
-
-        email:
-          payload.primaryContact.email ||
-          null,
-
-        mobile:
-          payload.primaryContact.mobile ||
-          null,
-
-        whatsapp:
-          payload.primaryContact.whatsapp ||
-          null,
-
-        contactType:
-          payload.primaryContact
-            .contactType || "OTHER",
-
-        isPrimary: true,
-
-        createdById: currentUser.id,
-      },
-      { transaction }
-    );
-
-    for (const contact of
-      payload.additionalContacts || []) {
-      await LeadContact.create(
-        {
-          leadId: lead.id,
-          fullName: contact.fullName,
-          designation:
-            contact.designation || null,
-          email: contact.email || null,
-          mobile: contact.mobile || null,
-          whatsapp:
-            contact.whatsapp || null,
-          contactType:
-            contact.contactType || "OTHER",
-          isPrimary: false,
-          createdById: currentUser.id,
-        },
-        { transaction }
-      );
-    }
-
-    await audit({
-      leadId: lead.id,
-      action: "LEAD_CREATED",
-      newValue: {
-        businessId,
-        companyName: lead.companyName,
-      },
-      changedById: currentUser.id,
-      transaction,
-    });
-
-    await transaction.commit();
-
-    const createdLead =
-      await getLeadById(lead.id);
-
-    return {
-      lead: createdLead,
-      possibleDuplicates,
-    };
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+const recordLeadAudit = async ({ lead, action, actor, context, changes = {} }) => {
+  await LeadAudit.create({ leadId: lead._id, permanentLeadId: lead.permanentLeadId, action, actorUserId: actor._id, changes, ...contextFields(context) });
+  await recordAudit({ action: `LEAD.${action}`, actorUserId: actor._id, targetUserId: lead.assignedTo?._id || lead.assignedTo, context, metadata: { leadId: String(lead._id), permanentLeadId: lead.permanentLeadId } });
 };
 
-export const listLeads = async (
-  query
-) => {
-  const page = query.page || 1;
-  const limit = query.limit || 20;
-
-  const where = {};
-
+const buildFilter = (query, actor) => {
+  const filter = {};
+  const includeDeleted = query.includeDeleted === "true" && actor.role === "ADMIN";
+  if (!includeDeleted) filter.deletedAt = null;
+  if (query.assignedTo) filter.assignedTo = query.assignedTo;
+  if (query.salesStage) filter.salesStage = query.salesStage;
+  if (query.leadPriority) filter.leadPriority = query.leadPriority;
+  if (query.temperature) filter.temperature = query.temperature;
+  if (query.source) filter.source = query.source;
+  if (query.industry) filter.industry = query.industry;
+  if (query.city) filter.city = query.city;
+  if (query.country) filter.country = query.country;
   if (query.search) {
-    where[Op.or] = [
-      {
-        businessId: {
-          [Op.iLike]: `%${query.search}%`,
-        },
-      },
-
-      {
-        companyName: {
-          [Op.iLike]: `%${query.search}%`,
-        },
-      },
-
-      {
-        sector: {
-          [Op.iLike]: `%${query.search}%`,
-        },
-      },
-
-      {
-        city: {
-          [Op.iLike]: `%${query.search}%`,
-        },
-      },
+    const regex = new RegExp(escapeRegExp(query.search), "i");
+    filter.$or = [
+      { permanentLeadId: regex }, { companyName: regex }, { "primaryContact.fullName": regex },
+      { "primaryContact.email": regex }, { "primaryContact.mobile": regex }, { industry: regex }, { subSector: regex }, { city: regex },
     ];
   }
-
-  if (query.assignedOwnerId) {
-    where.assignedOwnerId =
-      query.assignedOwnerId;
-  }
-
-  if (query.stage) {
-    where.stage = query.stage;
-  }
-
-  if (query.temperature) {
-    where.temperature =
-      query.temperature;
-  }
-
-  if (query.verificationStatus) {
-    where.verificationStatus =
-      query.verificationStatus;
-  }
-
-  if (query.potentialStatus) {
-    where.potentialStatus =
-      query.potentialStatus;
-  }
-
-  if (query.sector) {
-    where.sector = {
-      [Op.iLike]: `%${query.sector}%`,
-    };
-  }
-
-  if (query.country) {
-    where.country = {
-      [Op.iLike]: `%${query.country}%`,
-    };
-  }
-
-  if (query.state) {
-    where.state = {
-      [Op.iLike]: `%${query.state}%`,
-    };
-  }
-
-  if (query.city) {
-    where.city = {
-      [Op.iLike]: `%${query.city}%`,
-    };
-  }
-
-  if (query.leadSource) {
-    where.leadSource =
-      query.leadSource;
-  }
-
-  if (
-    query.createdFrom ||
-    query.createdTo
-  ) {
-    where.createdAt = {};
-
-    if (query.createdFrom) {
-      where.createdAt[Op.gte] =
-        new Date(query.createdFrom);
-    }
-
-    if (query.createdTo) {
-      where.createdAt[Op.lte] =
-        new Date(query.createdTo);
-    }
-  }
-
-  if (
-    query.minBudget !== undefined ||
-    query.maxBudget !== undefined
-  ) {
-    where.estimatedProjectBudget = {};
-
-    if (query.minBudget !== undefined) {
-      where.estimatedProjectBudget[
-        Op.gte
-      ] = query.minBudget;
-    }
-
-    if (query.maxBudget !== undefined) {
-      where.estimatedProjectBudget[
-        Op.lte
-      ] = query.maxBudget;
-    }
-  }
-
-  const result =
-    await Lead.findAndCountAll({
-      where,
-
-      distinct: true,
-
-      include: [
-        {
-          model: LeadContact,
-          as: "contacts",
-          where: {
-            isPrimary: true,
-          },
-          required: false,
-        },
-
-        {
-          model: User,
-          as: "assignedOwner",
-          attributes: safeUserAttributes,
-        },
-      ],
-
-      order: [["createdAt", "DESC"]],
-
-      limit,
-
-      offset: (page - 1) * limit,
-    });
-
-  return {
-    leads: result.rows,
-
-    pagination: {
-      page,
-      limit,
-      total: result.count,
-      totalPages: Math.ceil(
-        result.count / limit
-      ),
-    },
-  };
+  return filter;
 };
 
-export const getLeadById = async (id) => {
-  return requireLead(id, {
-    include: [
-      {
-        model: LeadContact,
-        as: "contacts",
-      },
-
-      {
-        model: User,
-        as: "assignedOwner",
-        attributes: safeUserAttributes,
-      },
-
-      {
-        model: User,
-        as: "creator",
-        attributes: safeUserAttributes,
-      },
-
-      {
-        model: LeadComment,
-        as: "comments",
-        include: [
-          {
-            model: User,
-            as: "author",
-            attributes: safeUserAttributes,
-          },
-        ],
-      },
-    ],
-
-    order: [
-      [
-        { model: LeadComment, as: "comments" },
-        "createdAt",
-        "DESC",
-      ],
-    ],
-  });
+export const listLeads = async (query, actor) => {
+  const filter = buildFilter(query, actor);
+  const sort = { [query.sortBy]: query.sortOrder === "asc" ? 1 : -1, _id: -1 };
+  const [items, total] = await Promise.all([
+    Lead.find(filter).populate("assignedTo", "userId fullName email").sort(sort).skip((query.page - 1) * query.limit).limit(query.limit).lean(),
+    Lead.countDocuments(filter),
+  ]);
+  return { items: items.map(presentLead), meta: { page: query.page, limit: query.limit, total, totalPages: Math.max(1, Math.ceil(total / query.limit)) } };
 };
 
-export const updateLead = async (
-  id,
-  payload,
-  currentUser
-) => {
-  const lead =
-    await requireLead(id);
+export const getLead = async (id) => presentLead(await requireLead(id));
 
-  requireLeadEditAccess(
-    lead,
-    currentUser
-  );
-
-  if (
-    payload.verificationStatus ===
-      "INVALID" &&
-    !payload.invalidReason &&
-    !lead.invalidReason
-  ) {
-    const error = new Error(
-      "Invalid reason is required"
-    );
-
-    error.status = 400;
-    throw error;
-  }
-
-  const transaction =
-    await sequelize.transaction();
-
-  try {
-    for (const [
-      field,
-      newValue,
-    ] of Object.entries(payload)) {
-      const oldValue = lead.get(field);
-
-      if (
-        JSON.stringify(oldValue) ===
-        JSON.stringify(newValue)
-      ) {
-        continue;
-      }
-
-      lead.set(field, newValue);
-
-      await audit({
-        leadId: lead.id,
-        action: "LEAD_UPDATED",
-        fieldName: field,
-        oldValue,
-        newValue,
-        changedById: currentUser.id,
-        transaction,
-      });
-    }
-
-    await lead.save({ transaction });
-
-    await transaction.commit();
-
-    return getLeadById(id);
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+export const createLead = async (body, actor, context) => {
+  const assignedTo = actor.role === "ADMIN" && body.assignedTo ? body.assignedTo : actor._id;
+  await requireActiveUser(assignedTo);
+  const normalized = normalizeBody({ ...body, assignedTo });
+  const lead = await Lead.create({ ...normalized, permanentLeadId: await nextLeadId(), createdBy: actor._id, updatedBy: actor._id });
+  await recordLeadAudit({ lead, action: "CREATED", actor, context, changes: { companyName: lead.companyName, assignedTo: String(assignedTo) } });
+  await lead.populate("assignedTo", "userId fullName email");
+  return presentLead(lead);
 };
 
-export const reassignLead = async (
-  id,
-  ownerId,
-  currentUser
-) => {
-  const transaction =
-    await sequelize.transaction();
-
-  try {
-    const lead =
-      await requireLead(id, {
-        transaction,
-      });
-
-    await ensureValidOwner(
-      ownerId,
-      transaction
-    );
-
-    const oldOwnerId =
-      lead.assignedOwnerId;
-
-    lead.assignedOwnerId = ownerId;
-
-    await lead.save({ transaction });
-
-    await audit({
-      leadId: lead.id,
-      action: "LEAD_REASSIGNED",
-      fieldName: "assignedOwnerId",
-      oldValue: oldOwnerId,
-      newValue: ownerId,
-      changedById: currentUser.id,
-      transaction,
-    });
-
-    await transaction.commit();
-
-    return getLeadById(id);
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
+export const updateLead = async (id, body, actor, context) => {
+  const lead = await requireLead(id);
+  if (!canMutate(lead, actor)) throw new AppError("You can only edit leads assigned to you", { statusCode: 403, code: "LEAD_EDIT_FORBIDDEN" });
+  const previous = presentLead(lead);
+  const next = { ...body };
+  if (body.assignedTo) {
+    if (actor.role !== "ADMIN" && String(body.assignedTo) !== String(actor._id)) throw new AppError("Only an administrator can reassign a lead", { statusCode: 403, code: "LEAD_REASSIGN_FORBIDDEN" });
+    await requireActiveUser(body.assignedTo);
   }
+  const normalized = normalizeBody(next);
+  Object.assign(lead, normalized, { updatedBy: actor._id });
+  await lead.save();
+  await recordLeadAudit({ lead, action: "UPDATED", actor, context, changes: diffLead(previous, presentLead(lead)) });
+  await lead.populate("assignedTo", "userId fullName email");
+  return presentLead(lead);
 };
 
-export const addLeadContact = async (
-  leadId,
-  payload,
-  currentUser
-) => {
-  const lead =
-    await requireLead(leadId);
-
-  requireLeadEditAccess(
-    lead,
-    currentUser
-  );
-
-  const transaction =
-    await sequelize.transaction();
-
-  try {
-    if (payload.isPrimary) {
-      await LeadContact.update(
-        { isPrimary: false },
-        {
-          where: { leadId },
-          transaction,
-        }
-      );
-    }
-
-    const contact =
-      await LeadContact.create(
-        {
-          ...payload,
-          leadId,
-          isPrimary:
-            payload.isPrimary || false,
-          createdById: currentUser.id,
-        },
-        { transaction }
-      );
-
-    await audit({
-      leadId,
-      action: "CONTACT_ADDED",
-      newValue: contact.toJSON(),
-      changedById: currentUser.id,
-      transaction,
-    });
-
-    await transaction.commit();
-
-    return contact;
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+export const softDeleteLead = async (id, actor, context) => {
+  const lead = await requireLead(id);
+  if (!canMutate(lead, actor)) throw new AppError("You can only delete leads assigned to you", { statusCode: 403, code: "LEAD_DELETE_FORBIDDEN" });
+  lead.deletedAt = new Date(); lead.deletedBy = actor._id; lead.updatedBy = actor._id; await lead.save();
+  await recordLeadAudit({ lead, action: "SOFT_DELETED", actor, context });
 };
 
-export const updateLeadContact = async (
-  leadId,
-  contactId,
-  payload,
-  currentUser
-) => {
-  const lead =
-    await requireLead(leadId);
-
-  requireLeadEditAccess(
-    lead,
-    currentUser
-  );
-
-  const contact =
-    await LeadContact.findOne({
-      where: {
-        id: contactId,
-        leadId,
-      },
-    });
-
-  if (!contact) {
-    const error =
-      new Error("Contact not found");
-
-    error.status = 404;
-    throw error;
-  }
-
-  const transaction =
-    await sequelize.transaction();
-
-  try {
-    if (payload.isPrimary === true) {
-      await LeadContact.update(
-        { isPrimary: false },
-        {
-          where: { leadId },
-          transaction,
-        }
-      );
-    }
-
-    const oldValue =
-      contact.toJSON();
-
-    Object.entries(payload).forEach(
-      ([key, value]) => {
-        if (
-          key === "isPrimary" &&
-          value === false &&
-          contact.isPrimary
-        ) {
-          return;
-        }
-
-        contact.set(key, value);
-      }
-    );
-
-    await contact.save({
-      transaction,
-    });
-
-    await audit({
-      leadId,
-      action: "CONTACT_UPDATED",
-      oldValue,
-      newValue: contact.toJSON(),
-      changedById: currentUser.id,
-      transaction,
-    });
-
-    await transaction.commit();
-
-    return contact;
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+export const restoreLead = async (id, actor, context) => {
+  const lead = await requireLead(id, { includeDeleted: true });
+  if (!lead.deletedAt) return presentLead(lead);
+  lead.deletedAt = null; lead.deletedBy = null; lead.updatedBy = actor._id; await lead.save();
+  await recordLeadAudit({ lead, action: "RESTORED", actor, context });
+  await lead.populate("assignedTo", "userId fullName email");
+  return presentLead(lead);
 };
 
-export const deleteLeadContact = async (
-  leadId,
-  contactId,
-  currentUser
-) => {
-  const lead =
-    await requireLead(leadId);
-
-  requireLeadEditAccess(
-    lead,
-    currentUser
-  );
-
-  const contact =
-    await LeadContact.findOne({
-      where: {
-        id: contactId,
-        leadId,
-      },
-    });
-
-  if (!contact) {
-    const error =
-      new Error("Contact not found");
-
-    error.status = 404;
-    throw error;
-  }
-
-  const transaction =
-    await sequelize.transaction();
-
-  try {
-    if (contact.isPrimary) {
-      const replacement =
-        await LeadContact.findOne({
-          where: {
-            leadId,
-            id: {
-              [Op.ne]: contactId,
-            },
-          },
-          transaction,
-        });
-
-      if (!replacement) {
-        const error = new Error(
-          "A lead must have at least one primary contact"
-        );
-
-        error.status = 400;
-        throw error;
-      }
-
-      replacement.isPrimary = true;
-
-      await replacement.save({
-        transaction,
-      });
-    }
-
-    await audit({
-      leadId,
-      action: "CONTACT_DELETED",
-      oldValue: contact.toJSON(),
-      changedById: currentUser.id,
-      transaction,
-    });
-
-    await contact.destroy({
-      transaction,
-    });
-
-    await transaction.commit();
-
-    return true;
-  } catch (error) {
-    await transaction.rollback();
-    throw error;
-  }
+export const getLeadHistory = async (id) => {
+  const lead = await requireLead(id, { includeDeleted: true });
+  const items = await LeadAudit.find({ leadId: lead._id }).populate("actorUserId", "userId fullName email").sort({ createdAt: -1 }).limit(100).lean();
+  return items.map((item) => ({ id: String(item._id), action: item.action, changes: item.changes, actor: safeUser(item.actorUserId), createdAt: item.createdAt }));
 };
 
-export const addLeadComment = async (
-  leadId,
-  payload,
-  currentUser
-) => {
-  await requireLead(leadId);
-
-  return LeadComment.create({
-    leadId,
-
-    stageContext:
-      payload.stageContext || "A",
-
-    comment: payload.comment,
-
-    createdById: currentUser.id,
-  });
-};
-
-export const listLeadComments = async (
-  leadId
-) => {
-  await requireLead(leadId);
-
-  return LeadComment.findAll({
-    where: { leadId },
-
-    include: [
-      {
-        model: User,
-        as: "author",
-        attributes: safeUserAttributes,
-      },
-    ],
-
-    order: [["createdAt", "DESC"]],
-  });
-};
-
-export const listLeadAudits = async (
-  leadId
-) => {
-  await requireLead(leadId);
-
-  return LeadAudit.findAll({
-    where: { leadId },
-
-    include: [
-      {
-        model: User,
-        as: "changedBy",
-        attributes: safeUserAttributes,
-      },
-    ],
-
-    order: [["createdAt", "DESC"]],
-  });
-};
-
-export const softDeleteLead = async (
-  id,
-  currentUser
-) => {
-  const lead =
-    await requireLead(id);
-
-  await audit({
-    leadId: lead.id,
-    action: "LEAD_SOFT_DELETED",
-    oldValue: {
-      deletedAt: null,
-    },
-    newValue: {
-      deleted: true,
-    },
-    changedById: currentUser.id,
-  });
-
-  await lead.destroy();
-
-  return true;
-};
-
-export const restoreLead = async (
-  id,
-  currentUser
-) => {
-  const lead =
-    await Lead.findByPk(id, {
-      paranoid: false,
-    });
-
-  if (!lead) {
-    const error =
-      new Error("Lead not found");
-
-    error.status = 404;
-    throw error;
-  }
-
-  if (!lead.deletedAt) {
-    return getLeadById(id);
-  }
-
-  await lead.restore();
-
-  await audit({
-    leadId: lead.id,
-    action: "LEAD_RESTORED",
-    oldValue: {
-      deleted: true,
-    },
-    newValue: {
-      deleted: false,
-    },
-    changedById: currentUser.id,
-  });
-
-  return getLeadById(id);
+export const getLeadSummary = async (query = {}) => {
+  const match = { deletedAt: null };
+  if (query.assignedTo) match.assignedTo = new mongoose.Types.ObjectId(query.assignedTo);
+  const now = new Date();
+  const [totals, sectors, dueFollowUps] = await Promise.all([
+    Lead.aggregate([{ $match: match }, { $group: { _id: null, total: { $sum: 1 }, estimatedBudget: { $sum: "$estimatedBudget" }, avgIntent: { $avg: "$buyingIntentScore" }, highPriority: { $sum: { $cond: [{ $eq: ["$leadPriority", "High"] }, 1, 0] } }, hot: { $sum: { $cond: [{ $eq: ["$temperature", "Hot"] }, 1, 0] } } } }]),
+    Lead.aggregate([{ $match: match }, { $group: { _id: "$industry", count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 8 }]),
+    Lead.countDocuments({ ...match, nextFollowUpDate: mongoose.trusted({ $ne: null, $lte: now }) }),
+  ]);
+  const row = totals[0] || {};
+  return { total: row.total || 0, estimatedBudget: row.estimatedBudget || 0, averageIntentScore: Math.round(row.avgIntent || 0), highPriority: row.highPriority || 0, hot: row.hot || 0, dueFollowUps, sectors: sectors.map((item) => ({ industry: item._id || "Unspecified", count: item.count })) };
 };

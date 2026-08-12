@@ -1,134 +1,54 @@
-import { createBrowserRouter } from "react-router-dom";
-
-import AuthLayout from "../layouts/AuthLayout";
-import DashboardLayout from "../layouts/DashboardLayout";
-
+import { Navigate, createBrowserRouter } from "react-router-dom";
 import ProtectedRoute from "../features/auth/components/ProtectedRoute";
-
+import RoleRoute from "../features/auth/components/RoleRoute";
+import ActivatePage from "../features/auth/pages/ActivatePage";
+import ForgotPasswordPage from "../features/auth/pages/ForgotPasswordPage";
 import LoginPage from "../features/auth/pages/LoginPage";
-import DashboardPage from "../features/dashboard/pages/DashboardPage";
-
-import LeadsPage from "../features/leads/pages/LeadsPage";
-import LeadDetailsPage from "../features/leads/pages/LeadDetailsPage";
-
-import C1Page from "../features/c1/pages/C1Page";
-import C1LeadPage from "../features/c1/pages/C1LeadPage";
-
-import C2Page from "../features/c2/pages/C2Page";
-import C2LeadPage from "../features/c2/pages/C2LeadPage";
-
-import C3Page from "../features/c3/pages/C3Page";
-import C3LeadPage from "../features/c3/pages/C3LeadPage";
-
-import C4Page from "../features/c4/pages/C4Page";
-import C4LeadPage from "../features/c4/pages/C4LeadPage";
-import WonDealsPage from "../features/c4/pages/WonDealsPage";
-import TargetsPage from "../features/targets/pages/TargetsPage";
-import PerformancePage from "../features/performance/pages/PerformancePage";
-import HandoverPage from "../features/handover/pages/HandoverPage";
-
-
-/*
-  Central frontend router.
-*/
+import RegisterPage from "../features/auth/pages/RegisterPage";
+import ResetPasswordPage from "../features/auth/pages/ResetPasswordPage";
+import UserManagementPage from "../features/users/pages/UserManagementPage";
+import AimMasterPage from "../features/workspace/pages/AimMasterPage";
+import TargetSheetPage from "../features/workspace/pages/TargetSheetPage";
+import AMasterLeadsPage from "../features/workspace/pages/AMasterLeadsPage";
+import IInteractionPage from "../features/workspace/pages/IInteractionPage";
+import MClosurePage from "../features/workspace/pages/MClosurePage";
+import ProfilePage from "../features/workspace/pages/ProfilePage";
+import NotFoundPage from "../features/workspace/pages/NotFoundPage";
+import AuthLayout from "../layouts/AuthLayout";
+import SecureLayout from "../layouts/SecureLayout";
 
 export const router = createBrowserRouter([
+  { path: "/", element: <Navigate to="/app/aim-master" replace /> },
   {
     element: <AuthLayout />,
-
     children: [
-      {
-        path: "/login",
-        element: <LoginPage />,
-      },
+      { path: "/login", element: <LoginPage /> },
+      { path: "/register", element: <RegisterPage /> },
+      { path: "/activate", element: <ActivatePage /> },
+      { path: "/forgot-password", element: <ForgotPasswordPage /> },
+      { path: "/reset-password", element: <ResetPasswordPage /> },
     ],
   },
-
   {
-    path: "/",
-
-    element: (
-      <ProtectedRoute>
-        <DashboardLayout />
-      </ProtectedRoute>
-    ),
-
+    element: <ProtectedRoute />,
     children: [
       {
-        index: true,
-        element: <DashboardPage />,
+        path: "/app",
+        element: <SecureLayout />,
+        children: [
+          { index: true, element: <Navigate to="aim-master" replace /> },
+          { path: "aim-master", element: <AimMasterPage /> },
+          { path: "targets", element: <TargetSheetPage /> },
+          { path: "a-master-leads", element: <AMasterLeadsPage /> },
+          { path: "i-c1-c2", element: <IInteractionPage /> },
+          { path: "m-c3-c4", element: <MClosurePage /> },
+          { path: "profile", element: <ProfilePage /> },
+          { path: "admin/users", element: <RoleRoute roles={["ADMIN"]}><UserManagementPage /></RoleRoute> },
+          { path: "*", element: <NotFoundPage /> },
+        ],
       },
-
-      {
-        path: "leads",
-        element: <LeadsPage />,
-      },
-
-      {
-        path: "leads/:id",
-        element: <LeadDetailsPage />,
-      },
-
-      {
-        path: "c1",
-        element: <C1Page />,
-      },
-
-      {
-        path: "c1/:leadId",
-        element: <C1LeadPage />,
-      },
-
-      {
-        path: "c2",
-        element: <C2Page />,
-      },
-
-      {
-        path: "c2/:leadId",
-        element: <C2LeadPage />,
-      },
-
-      {
-        path: "c3",
-        element: <C3Page />,
-      },
-
-      {
-        path: "c3/:leadId",
-        element: <C3LeadPage />,
-      },
-
-      {
-        path: "c4",
-        element: <C4Page />,
-      },
-
-      {
-        path: "c4/:leadId",
-        element: <C4LeadPage />,
-      },
-
-      {
-        path: "won",
-        element: <WonDealsPage />,
-      },
-
-      {
-        path: "targets",
-        element: <TargetsPage />,
-      },
-
-      {
-        path: "performance",
-        element: <PerformancePage />,
-      },
-
-      {
-        path: "handover",
-        element: <HandoverPage />,
-      },
-
     ],
   },
+  { path: "/admin/users", element: <Navigate to="/app/admin/users" replace /> },
+  { path: "*", element: <Navigate to="/app/aim-master" replace /> },
 ]);

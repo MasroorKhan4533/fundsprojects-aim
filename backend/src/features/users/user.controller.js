@@ -1,64 +1,42 @@
-import {
-  changeUserRole,
-  changeUserStatus,
-  createUser,
-  listUsers,
-  resetUserPassword,
-} from "./user.service.js";
+import { sendSuccess } from "../../core/http/response.js";
+import { changeRole, changeStatus, listUsers, resendActivation, reviewRegistration, sendAdminPasswordReset } from "./user.service.js";
 
-export const create = async (req, res) => {
-  const user = await createUser(req.validated.body);
+const contextFrom = (req) => ({
+  requestId: req.requestId,
+  ip: req.ip,
+  userAgent: req.get("user-agent") || "",
+});
 
-  res.status(201).json({
-    success: true,
-    message: "User created successfully",
-    user,
-  });
+export const listUsersController = async (req, res) => {
+  const result = await listUsers(req.validated.query);
+  return sendSuccess(res, { data: result.items, meta: result.meta });
 };
 
-export const list = async (req, res) => {
-  const users = await listUsers();
-
-  res.status(200).json({
-    success: true,
-    users,
-  });
-};
-
-export const updateStatus = async (req, res) => {
-  const user = await changeUserStatus(
-    req.validated.params.id,
-    req.validated.body.status
+export const reviewRegistrationController = async (req, res) => {
+  const user = await reviewRegistration(
+    { id: req.validated.params.id, ...req.validated.body },
+    req.user._id,
+    contextFrom(req)
   );
-
-  res.status(200).json({
-    success: true,
-    message: "User status updated",
-    user,
-  });
+  return sendSuccess(res, { message: req.validated.body.decision === "APPROVE" ? "Registration approved" : "Registration rejected", data: { user } });
 };
 
-export const updateRole = async (req, res) => {
-  const user = await changeUserRole(
-    req.validated.params.id,
-    req.validated.body.role
-  );
-
-  res.status(200).json({
-    success: true,
-    message: "User role updated",
-    user,
-  });
+export const resendActivationController = async (req, res) => {
+  await resendActivation(req.validated.params.id, req.user._id, contextFrom(req));
+  return sendSuccess(res, { message: "Activation email sent" });
 };
 
-export const resetPassword = async (req, res) => {
-  await resetUserPassword(
-    req.validated.params.id,
-    req.validated.body.password
-  );
+export const changeRoleController = async (req, res) => {
+  const user = await changeRole(req.validated.params.id, req.validated.body.role, req.user._id, contextFrom(req));
+  return sendSuccess(res, { message: "User role updated", data: { user } });
+};
 
-  res.status(200).json({
-    success: true,
-    message: "Password reset successfully",
-  });
+export const changeStatusController = async (req, res) => {
+  const user = await changeStatus(req.validated.params.id, req.validated.body.status, req.user._id, contextFrom(req));
+  return sendSuccess(res, { message: "User status updated", data: { user } });
+};
+
+export const sendPasswordResetController = async (req, res) => {
+  await sendAdminPasswordReset(req.validated.params.id, req.user._id, contextFrom(req));
+  return sendSuccess(res, { message: "Password reset email sent" });
 };

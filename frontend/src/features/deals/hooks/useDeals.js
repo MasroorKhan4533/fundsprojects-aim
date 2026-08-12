@@ -1,0 +1,10 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { dealsApi } from "../api/deals.api";
+export const dealKeys = { all: ["deals"], workbench: (params) => ["deals", "workbench", params], summary: (params) => ["deals", "summary", params], lead: (leadId) => ["deals", "lead", leadId] };
+export const useDealWorkbench = (params = {}) => useQuery({ queryKey: dealKeys.workbench(params), queryFn: () => dealsApi.workbench(params), placeholderData: (previous) => previous });
+export const useDealSummary = (params = {}) => useQuery({ queryKey: dealKeys.summary(params), queryFn: () => dealsApi.summary(params) });
+export const useDeal = (leadId, options = {}) => useQuery({ queryKey: dealKeys.lead(leadId), queryFn: () => dealsApi.byLead(leadId), enabled: Boolean(leadId), ...options });
+const invalidate = (client, leadId) => { client.invalidateQueries({ queryKey: dealKeys.all }); client.invalidateQueries({ queryKey: ["leads"] }); client.invalidateQueries({ queryKey: ["dashboard"] }); if (leadId) client.invalidateQueries({ queryKey: dealKeys.lead(leadId) }); };
+export const useSaveC3 = () => { const client = useQueryClient(); return useMutation({ mutationFn: dealsApi.saveC3, onSuccess: (_data, variables) => invalidate(client, variables.leadId) }); };
+export const useSaveC4 = () => { const client = useQueryClient(); return useMutation({ mutationFn: dealsApi.saveC4, onSuccess: (_data, variables) => invalidate(client, variables.leadId) }); };
+export const useCreateHandover = () => { const client = useQueryClient(); return useMutation({ mutationFn: dealsApi.handover, onSuccess: (_data, leadId) => invalidate(client, leadId) }); };

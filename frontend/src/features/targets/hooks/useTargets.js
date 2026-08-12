@@ -1,43 +1,8 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-
-import * as api from "../api/targets.api";
-
-export const useTargets = () =>
-  useQuery({
-    queryKey: ["targets"],
-    queryFn: api.getTargets,
-  });
-
-export const useSaveTarget = () => {
-  const qc =
-    useQueryClient();
-
-  return useMutation({
-    mutationFn:
-      api.saveTarget,
-
-    onSuccess: () =>
-      qc.invalidateQueries({
-        queryKey: ["targets"],
-      }),
-  });
-};
-
-export const useDeleteTarget = () => {
-  const qc =
-    useQueryClient();
-
-  return useMutation({
-    mutationFn:
-      api.deleteTarget,
-
-    onSuccess: () =>
-      qc.invalidateQueries({
-        queryKey: ["targets"],
-      }),
-  });
-};
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { targetsApi } from "../api/targets.api";
+export const targetKeys = { all: ["targets"], list: (params) => ["targets", "list", params] };
+export const useTargets = (params) => useQuery({ queryKey: targetKeys.list(params), queryFn: () => targetsApi.list(params) });
+const useRefresh = (mutationFn) => { const queryClient = useQueryClient(); return useMutation({ mutationFn, onSuccess: () => { queryClient.invalidateQueries({ queryKey: targetKeys.all }); queryClient.invalidateQueries({ queryKey: ["dashboard"] }); } }); };
+export const useCreateTarget = () => useRefresh(targetsApi.create);
+export const useUpdateTarget = () => useRefresh(({ id, body }) => targetsApi.update(id, body));
+export const useDeleteTarget = () => useRefresh(targetsApi.remove);

@@ -1,132 +1,24 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-
-import * as api from "../api/leads.api";
-
-const refresh = (queryClient, id) => {
-  queryClient.invalidateQueries({
-    queryKey: ["leads"],
-  });
-
-  if (id) {
-    queryClient.invalidateQueries({
-      queryKey: ["lead", id],
-    });
-  }
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { leadsApi } from "../api/leads.api";
+export const leadKeys = {
+  all: ["leads"],
+  list: (params) => ["leads", "list", params],
+  summary: (params) => ["leads", "summary", params],
+  detail: (id) => ["leads", "detail", id],
+  history: (id) => ["leads", "history", id],
 };
-
-export const useLeads = (filters) =>
-  useQuery({
-    queryKey: ["leads", filters],
-    queryFn: () => api.getLeads(filters),
-  });
-
-export const useDeletedLeads = (enabled) =>
-  useQuery({
-    queryKey: ["leads", "deleted"],
-    queryFn: api.getDeletedLeads,
-    enabled,
-  });
-
-export const useLead = (id) =>
-  useQuery({
-    queryKey: ["lead", id],
-    queryFn: () => api.getLead(id),
-    enabled: Boolean(id),
-  });
-
-export const useAudits = (id, enabled) =>
-  useQuery({
-    queryKey: ["lead", id, "audits"],
-    queryFn: () => api.getAudits(id),
-    enabled: Boolean(id) && enabled,
-  });
-
-export const useDuplicateCheck = () =>
-  useMutation({
-    mutationFn: api.checkDuplicates,
-  });
-
-export const useCreateLead = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.createLead,
-    onSuccess: () => refresh(qc),
-  });
+export const useLeads = (params) => useQuery({ queryKey: leadKeys.list(params), queryFn: () => leadsApi.list(params), placeholderData: (previous) => previous });
+export const useLeadSummary = (params = {}) => useQuery({ queryKey: leadKeys.summary(params), queryFn: () => leadsApi.summary(params) });
+export const useLead = (id, options = {}) => useQuery({ queryKey: leadKeys.detail(id), queryFn: () => leadsApi.get(id), enabled: Boolean(id), ...options });
+export const useLeadHistory = (id, options = {}) => useQuery({ queryKey: leadKeys.history(id), queryFn: () => leadsApi.history(id), enabled: Boolean(id), ...options });
+const useRefresh = (mutationFn) => {
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn, onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: leadKeys.all });
+    queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+  } });
 };
-
-export const useUpdateLead = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.updateLead,
-    onSuccess: (_, v) => refresh(qc, v.id),
-  });
-};
-
-export const useAssignLead = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.assignLead,
-    onSuccess: (_, v) => refresh(qc, v.id),
-  });
-};
-
-export const useDeleteLead = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.deleteLead,
-    onSuccess: () => refresh(qc),
-  });
-};
-
-export const useRestoreLead = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.restoreLead,
-    onSuccess: () => refresh(qc),
-  });
-};
-
-export const useAddComment = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.addComment,
-    onSuccess: (_, v) => refresh(qc, v.id),
-  });
-};
-
-export const useAddContact = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.addContact,
-    onSuccess: (_, v) => refresh(qc, v.id),
-  });
-};
-
-export const useUpdateContact = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.updateContact,
-    onSuccess: (_, v) => refresh(qc, v.id),
-  });
-};
-
-export const useDeleteContact = () => {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: api.deleteContact,
-    onSuccess: (_, v) => refresh(qc, v.id),
-  });
-};
+export const useCreateLead = () => useRefresh(leadsApi.create);
+export const useUpdateLead = () => useRefresh(({ id, body }) => leadsApi.update(id, body));
+export const useDeleteLead = () => useRefresh(leadsApi.remove);
+export const useRestoreLead = () => useRefresh(leadsApi.restore);

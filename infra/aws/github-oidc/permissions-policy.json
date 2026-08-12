@@ -1,0 +1,61 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ECRAuthorization",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PushOnlyFundsProjectsImages",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+        "ecr:BatchGetImage",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories"
+      ],
+      "Resource": [
+        "arn:aws:ecr:ap-south-1:800591602204:repository/fundsprojects-aim/backend",
+        "arn:aws:ecr:ap-south-1:800591602204:repository/fundsprojects-aim/frontend"
+      ]
+    },
+    {
+      "Sid": "DeployOnlyToStagingInstance",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:SendCommand"
+      ],
+      "Resource": [
+        "arn:aws:ssm:ap-south-1::document/AWS-RunShellScript",
+        "arn:aws:ec2:ap-south-1:800591602204:instance/i-0eb69c3c3e0f1abb9"
+      ]
+    },
+    {
+      "Sid": "ReadDeploymentCommandStatus",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetCommandInvocation",
+        "ssm:ListCommands",
+        "ssm:ListCommandInvocations"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadStagingInstanceState",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

@@ -1,41 +1,27 @@
-import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
+import { AppError } from "../core/errors/app-error.js";
+import { verifyAccessToken } from "../core/security/tokens.js";
 import User from "../features/users/user.model.js";
 
-export const authenticate = async (req, res, next) => {
+export const authenticate = async (req, _res, next) => {
   try {
-    let token = req.cookies?.[env.auth.cookieName];
-
+    let token = req.cookies?.[env.auth.accessCookieName];
     const authorization = req.headers.authorization;
-
-    if (!token && authorization?.startsWith("Bearer ")) {
-      token = authorization.split(" ")[1];
-    }
+    if (!token && authorization?.startsWith("Bearer ")) token = authorization.slice(7).trim();
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required",
-      });
+      throw new AppError("Authentication required", { statusCode: 401, code: "AUTH_REQUIRED" });
     }
 
-    const payload = jwt.verify(token, env.auth.jwtSecret);
-
-    const user = await User.findByPk(payload.sub);
-
-    if (!user || user.status !== "ACTIVE") {
-      return res.status(401).json({
-        success: false,
-        message: "User account is unavailable",
-      });
+    const payload = verifyAccessToken(token);
+    const user = await User.findById(payload.sub);
+    if (!user || user.status !== "ACTIVE" || user.tokenVersion !== payload.ver) {
+      throw new AppError("User account is unavailable", { statusCode: 401, code: "AUTH_INVALID" });
     }
 
     req.user = user;
     next();
-  } catch {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid or expired authentication",
-    });
+  } catch (error) {
+    next(error);
   }
 };

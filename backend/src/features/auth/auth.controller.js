@@ -1,37 +1,67 @@
 import { env } from "../../config/env.js";
-import { loginUser } from "./auth.service.js";
+import { sendSuccess } from "../../core/http/response.js";
+import { clearAuthCookies, setAccessCookie, setRefreshCookie } from "../../core/security/cookies.js";
+import { getCurrentUser, activate, forgotPassword, login, logout, logoutAll, refresh, register, resetPassword } from "./auth.service.js";
 
-export const login = async (req, res) => {
-  const { email, password } = req.validated.body;
+const contextFrom = (req) => ({
+  requestId: req.requestId,
+  ip: req.ip,
+  userAgent: req.get("user-agent") || "",
+});
 
-  const result = await loginUser(email, password);
-
-  res.cookie(env.auth.cookieName, result.token, {
-    httpOnly: true,
-    secure: env.nodeEnv === "production",
-    sameSite: "lax",
-    maxAge: 8 * 60 * 60 * 1000,
-  });
-
-  res.status(200).json({
-    success: true,
-    message: "Login successful",
-    user: result.user,
+export const registerController = async (req, res) => {
+  const user = await register(req.validated.body, contextFrom(req));
+  return sendSuccess(res, {
+    statusCode: 201,
+    message: "Registration submitted for administrator approval",
+    data: { user },
   });
 };
 
-export const me = async (req, res) => {
-  res.status(200).json({
-    success: true,
-    user: req.user.toSafeJSON(),
-  });
+export const loginController = async (req, res) => {
+  const result = await login(req.validated.body, contextFrom(req));
+  setAccessCookie(res, result.accessToken);
+  setRefreshCookie(res, result.refreshToken, result.rememberMe);
+  return sendSuccess(res, { message: "Login successful", data: { user: result.user } });
 };
 
-export const logout = async (req, res) => {
-  res.clearCookie(env.auth.cookieName);
+export const refreshController = async (req, res) => {
+  const result = await refresh(req.cookies?.[env.auth.refreshCookieName], contextFrom(req));
+  setAccessCookie(res, result.accessToken);
+  setRefreshCookie(res, result.refreshToken, result.rememberMe);
+  return sendSuccess(res, { message: "Session refreshed", data: { user: result.user } });
+};
 
-  res.status(200).json({
-    success: true,
-    message: "Logout successful",
-  });
+export const logoutController = async (req, res) => {
+  await logout(req.cookies?.[env.auth.refreshCookieName], req.user?._id, contextFrom(req));
+  clearAuthCookies(res);
+  return sendSuccess(res, { message: "Logged out" });
+};
+
+export const logoutAllController = async (req, res) => {
+  await logoutAll(req.user._id, contextFrom(req));
+  clearAuthCookies(res);
+  return sendSuccess(res, { message: "Logged out from all sessions" });
+};
+
+export const activateController = async (req, res) => {
+  const user = await activate(req.validated.body, contextFrom(req));
+  clearAuthCookies(res);
+  return sendSuccess(res, { message: "Account activated. You can now sign in.", data: { user } });
+};
+
+export const forgotPasswordController = async (req, res) => {
+  await forgotPassword(req.validated.body, contextFrom(req));
+  return sendSuccess(res, { message: "If the account exists, a password reset email has been sent." });
+};
+
+export const resetPasswordController = async (req, res) => {
+  await resetPassword(req.validated.body, contextFrom(req));
+  clearAuthCookies(res);
+  return sendSuccess(res, { message: "Password reset completed. Please sign in again." });
+};
+
+export const meController = async (req, res) => {
+  const user = await getCurrentUser(req.user._id);
+  return sendSuccess(res, { data: { user } });
 };

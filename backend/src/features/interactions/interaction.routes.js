@@ -1,0 +1,13 @@
+import { Router } from "express";
+import { asyncHandler } from "../../core/http/async-handler.js";
+import { authenticate } from "../../middlewares/authenticate.js";
+import { validate } from "../../middlewares/validate.js";
+import { createInteractionController, interactionSummaryController, journeyController, listInteractionsController } from "./interaction.controller.js";
+import { createInteractionSchema, interactionSummarySchema, journeySchema, listInteractionsSchema } from "./interaction.validation.js";
+const router = Router();
+router.use(authenticate);
+router.get("/summary", validate(interactionSummarySchema), asyncHandler(interactionSummaryController));
+router.get("/journey/:leadId", validate(journeySchema), asyncHandler(journeyController));
+router.get("/", validate(listInteractionsSchema), asyncHandler(listInteractionsController));
+router.post("/", validate(createInteractionSchema), asyncHandler(createInteractionController));
+export default router;
