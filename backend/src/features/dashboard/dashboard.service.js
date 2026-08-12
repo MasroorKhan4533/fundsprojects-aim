@@ -47,7 +47,7 @@ const dailyPerformance = async (leadMatch, query, actor) => {
     Target.aggregate([{ $match: targetMatch }, { $group: { _id: "$targetDate", target: { $sum: { $add: ["$metrics.leads", "$metrics.emails", "$metrics.messages", "$metrics.calls", "$metrics.meetings", "$metrics.c1", "$metrics.c2", "$metrics.c3", "$metrics.c4", "$metrics.proposals"] } }, revenueTarget: { $sum: "$metrics.revenue" } } }]),
     Lead.aggregate([{ $match: { ...leadMatch, createdAt: mongoose.trusted({ $gte: from, $lte: to }) } }, { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, count: { $sum: 1 } } }]),
     Interaction.aggregate([{ $match: { leadId: mongoose.trusted({ $in: leadIds }), occurredAt: mongoose.trusted({ $gte: from, $lte: to }) } }, { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$occurredAt" } }, count: { $sum: 1 } } }]),
-    Deal.find({ leadId: mongoose.trusted({ $in: leadIds }), $or: [{ c3At: { $gte: from, $lte: to } }, { c4At: { $gte: from, $lte: to } }] }).select("c3At c4At dealStatus finalValue").lean(),
+    Deal.find({ leadId: mongoose.trusted({ $in: leadIds }), $or: [{ c3At: mongoose.trusted({ $gte: from, $lte: to }) }, { c4At: mongoose.trusted({ $gte: from, $lte: to }) }] }).select("c3At c4At dealStatus finalValue").lean(),
   ]);
   const rows = new Map();
   for (let time = from.getTime(); time <= to.getTime(); time += 86400000) rows.set(dateKey(time), { date: dateKey(time), target: 0, actual: 0, revenueTarget: 0, revenueActual: 0 });

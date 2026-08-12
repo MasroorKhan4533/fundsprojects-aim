@@ -2,9 +2,9 @@ name: FundsProjects AIM Quality Gate
 
 on:
   push:
-    branches: [production-v1]
+    branches: [main]
   pull_request:
-    branches: [production-v1]
+    branches: [main]
 
 jobs:
   verify:
