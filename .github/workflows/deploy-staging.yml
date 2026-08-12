@@ -3,7 +3,7 @@ name: Deploy Staging
 on:
   push:
     branches:
-      - production-v1
+      - main
   workflow_dispatch:
 
 permissions:
